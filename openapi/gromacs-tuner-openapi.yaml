@@ -1,0 +1,133 @@
+openapi: 3.0.0
+info:
+  title: "GROMACS Tuner API"
+  version: "1.1"
+  description: "API for submitting tuning requests to gromacs-tuner."
+
+paths:
+  /api/tuner_runs:
+    post:
+      summary: Submit a `.tpr` file for tuning.
+      description: |
+        Uploads a `.tpr` file and starts a tuning process.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: "The `.tpr` file for the simulation to be tuned."
+                tuning_options:
+                  type: object
+                  additionalProperties: true
+                  description: |
+                    Optional constraints for tuning (e.g., CPU range, memory, DD, OMP). 
+                    This is an open-ended JSON object, and its structure may evolve.
+      responses:
+        "200":
+          description: "Tuning run successfully started."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tuner_run_id:
+                    type: string
+                    description: "Unique identifier for the tuning run."
+                  status:
+                    type: string
+                    description: "Current status of the tuning run."
+
+  /api/tuner_runs/{tuner_run_id}/results:
+    get:
+      summary: Retrieve tuner results.
+      description: "Fetches the parameter sets sorted by relative performance (best to worst)."
+      parameters:
+        - name: tuner_run_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Unique identifier of the tuner run."
+      responses:
+        "200":
+          description: "List of tested parameter configurations for the given tuning run."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tuner_run_id:
+                    type: string
+                    description: "Identifier of the tuner run."
+                  results:
+                    type: array
+                    description: "Array of best-performing configurations."
+                    items:
+                      type: object
+                      properties:
+                        configuration_used:
+                          type: object
+                          description: "Configuration parameters used."
+                          example:
+                            ntomp: "4"
+                            cpu_affinity: "compact"
+                        performance_score:
+                          type: number
+                          description: "Performance score."
+                        ray_id:
+                          type: string
+                          description: "Associated Ray identifier."
+
+  /api/tuner_runs/{tuner_run_id}:
+    delete:
+      summary: Delete a tuner run.
+      description: "Deletes a tuning run and removes associated results."
+      parameters:
+        - name: tuner_run_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Unique identifier of the tuning run."
+      responses:
+        "200":
+          description: "tuning run successfully deleted."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    description: "Status message confirming deletion."
+
+  /api/tuner_runs/{tuner_run_id}/status:
+    get:
+      summary: Retrieve the status of a tuning run.
+      description: "Fetches the current status of a tuning run."
+      parameters:
+        - name: tuner_run_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Unique identifier of the tuning run."
+      responses:
+        "200":
+          description: "Current status of the tuning run."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tuner_run_id:
+                    type: string
+                    description: "Identifier of the tuning run."
+                  status:
+                    type: string
+                    description: "Current status of the tuning process."

@@ -1,0 +1,21 @@
+Molekulární dynamika je dekádami prověřená technika simulace
+chování chemických systémů (mj. biomolekul) založená na integraci pohybových rovnic
+všech atomů v systému. Těch mohou být až miliony, proto je metoda výpočetně náročná.
+Konfigurace výpočtu molekulární dynamiky v technickém smyslu,
+při zachování identického významu simulace jako takové, je tvořena řadou parametrů, zejména počet výpočetních uzlů, počet procesů MPI a vláken v jednom procesu, mapování jednotlivých fází výpočtu na GPU, sdílení GPU mezi více procesy atd. Jen část těchto parametrů je dána nastavením simulace, v ostatních má uživatel prakticky plnou volnost, a tedy potenciální počet možných kombinací je obrovský. Přitom vliv nastavení na výkon je významný a leckdy neintuitivní. Řada uživatelů si s tímto nastavením neví rady, což často vede ke zbytečně dlouhým výpočtům a plýtvání výpočetními zdroji.
+
+Prvním cílem práce je navrhnout architekturu služby pro ladění
+těchto parametrů výpočtu. Vstupem zde bude zadání simulace,
+služba automaticky provede sérii experimentů s různým nastavením parametrů,
+změří jejich výkon a výsledky předá uživateli.
+Počítá se s nasazením v prostředí Kubernetes. Návrh musí být přiměřeně flexibilní, aby bylo možné jej v budoucnu rozšířit o další vzory výpočtu. Součástí návrhu bude i vhodné API, které bude použitelné z příkazové řádky i grafického rozhraní (implementace GUI už není povinnou částí této práce).
+
+Implementace služby musí dovolit alespoň
+- ladění počtu výpočetních uzlů,
+- procesů MPI a vláken -
+a přiřazení částí výpočtu na GPU
+- včetně sdílení GPU více procesy.
+Kromě standardního nastavení výpočtu musí být pokryt i scénář tzv.
+ - "replica exchange" s hierarchickou strukturou procesů MPI.
+
+Protože v reálných případech bude možných kombinací hyperparametrů vždy více, než by bylo realistické vyčerpávajícím způsobem vyzkoušet, práce se také zaměří na výběr vhodných algoritmů hledání optimální konfigurace.
