@@ -15,6 +15,7 @@ spec:
     spec:
       securityContext:
         fsGroupChangePolicy: OnRootMismatch
+        fsGroup: 1000
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
@@ -22,6 +23,9 @@ spec:
       - name: api
         image: cerit.io/adamondrejka/gromacs-tuner-api:1.1
         imagePullPolicy: Always
+        env:
+          - name: RAY_ADDRESS
+            value: "ray://raycluster-complete-head-svc:10001"
         ports:
         - containerPort: 8000
         resources:
@@ -35,7 +39,7 @@ spec:
           runAsUser: 1000
           capabilities:
             drop:
-            - ALL
+              - ALL
           allowPrivilegeEscalation: false
         volumeMounts:
         - name: gromacs-pvc

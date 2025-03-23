@@ -1,15 +1,20 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-import ray
-import asyncio
 import os
 import uuid
-from typing import Optional, Dict
+import subprocess
+import ray
+from typing import Dict, Optional
+
+def tune_implementation():
+    print("concrete_tune_implementation() mock called")
+    return {
+        "ntomp": "4",
+        "np": "2"
+    }
 
 app = FastAPI(title="GROMACS Tuner API")
 
-# Configure CORS for frontend access
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -18,189 +23,108 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# In-memory storage for job statuses and results (no persistent storage)
 job_statuses = {}
-job_results = {}
 
-# Default hardcoded configuration
-DEFAULT_TUNING_CONFIG = {
-    "ntomp": "4",
-    "cpu_affinity": "compact"
-}
+# Example in-memory dictionary:
+# job_statuses = {
+#     "<job_id>": {
+#         "status": "<current_status>",
+#         "object_ref": <Ray ObjectRef for the task (if any)>
+#     },
+#     ...
+# }
 
-async def simulate_job_completion(job_id: str):
-    """Simulates a job running and completing."""
-    await asyncio.sleep(15)  # Simulate job running for 15 seconds
-    job_statuses[job_id] = "COMPLETED"
-
-    # Create mock results
-    job_results[job_id] = {
-        "tuner_run_id": job_id,
-        "results": [
-            {
-                "configuration_used": DEFAULT_TUNING_CONFIG,
-                "performance_score": 100.5,
-                "ray_id": f"{job_id}_config1"
-            },
-            {
-                "configuration_used": {
-                    "ntomp": "2",
-                    "cpu_affinity": "scatter"
-                },
-                "performance_score": 85.2,
-                "ray_id": f"{job_id}_config2"
-            }
-        ]
-    }
-
-async def submit_ray_job(tpr_file_path: str, tuning_options: Optional[Dict] = None):
-    """
-    Submits a job to the Ray cluster.
-
-    Args:
-        tpr_file_path (str): The path to the uploaded .tpr file.
-        tuning_options (Optional[Dict]): Ignored, always using DEFAULT_TUNING_CONFIG.
-
-    Returns:
-        str: A job ID or identifier to track the job.
-    """
-    # Generate a simple unique ID for the job
-    job_id = str(uuid.uuid4())
-
-    # Store the job status
-    job_statuses[job_id] = "RUNNING"
-
-    # Start an async task to simulate job completion
-    asyncio.create_task(simulate_job_completion(job_id))
-
-    print(f"Submitted job with TPR file: {tpr_file_path} using DEFAULT_TUNING_CONFIG")
-    return job_id
-
-async def get_trial_status(job_id: str):
-    """
-    Gets the status of a trial.
-
-    Args:
-        job_id (str): The ID of the job.
-
-    Returns:
-        dict: A dictionary containing the job status.
-    """
-    if job_id in job_statuses:
-        status = job_statuses[job_id]
-    else:
-        status = "NOT_FOUND"
-
-    return {"tuner_run_id": job_id, "status": status}
+@ray.remote
+def run_gromacs_simulation(config: Dict[str, str], tpr_path: str):
+    # Set up the simulation environment based on config
+    env = os.environ.copy()
+    env["OMP_NUM_THREADS"] = config["ntomp"]
+    command = [
+        "mpirun", "-np", config["np"],
+        "gmx", "mdrun",
+        "-ntomp", config["ntomp"],
+        "-s", tpr_path  # use uploaded .tpr file directly
+    ]
+    # Run simulation and capture output
+    result = subprocess.run(command, capture_output=True, text=True, env=env)
+    # Log simulation output to a single log file
+    log_path = f"/tmp/tpr/{uuid.uuid4()}_simulation.log"
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    with open(log_path, "w") as log_file:
+        log_file.write("STDOUT:\n" + result.stdout + "\nSTDERR:\n" + result.stderr)
+    print("Simulation logged to", log_path)
+    return {"stdout": result.stdout, "stderr": result.stderr, "config": config}
 
 @app.post("/api/tuner_runs")
-async def create_tuner_run(
-    file: UploadFile = File(...),
-    tuning_options: Optional[str] = Form(None)
-):
-    """
-    Uploads a .tpr file and starts a tuning process.
-
-    Args:
-        file (UploadFile): The uploaded .tpr file.
-        tuning_options (Optional[str]): Ignored, always using DEFAULT_TUNING_CONFIG.
-
-    Returns:
-        JSONResponse: A JSON response containing the job ID and status.
-    """
+async def create_tuner_run(file: UploadFile = File(...), tuning_options: Optional[str] = Form(None)):
     if not file.filename.endswith(".tpr"):
-        raise HTTPException(status_code=400, detail="Invalid file type. Only .tpr files are allowed.")
+        raise HTTPException(status_code=400, detail="Invalid file type. Only .tpr allowed")
+    tpr_dir = "/tmp/tpr"
+    os.makedirs(tpr_dir, exist_ok=True)
+    file_path = os.path.join(tpr_dir, "md.tpr")
+    with open(file_path, "wb") as f:
+        content = await file.read()
+        f.write(content)
+    job_id = str(uuid.uuid4())
+    job_statuses[job_id] = {"status": "RUNNING"}
+    config = tune_implementation()
+    future = run_gromacs_simulation.remote(config, file_path)
+    job_statuses[job_id]["future"] = future
+    return {"tuner_run_id": job_id, "status": "RUNNING"}
 
-    try:
-        # Save the uploaded file (for now, save to a temporary location)
-        tpr_file_path = f"/tmp/tpr/{file.filename}"
-        os.makedirs(os.path.dirname(tpr_file_path), exist_ok=True)
-        with open(tpr_file_path, "wb") as f:
-            content = await file.read()
-            f.write(content)
-
-        # Always use the default configuration
-        job_id = await submit_ray_job(tpr_file_path, DEFAULT_TUNING_CONFIG)
-
-        return JSONResponse(content={"tuner_run_id": job_id, "status": "RUNNING"})
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/tuner_runs/{tuner_run_id}/status")
-async def get_tuner_run_status(tuner_run_id: str):
-    """
-    Retrieves the status of a Ray job.
-
-    Args:
-        tuner_run_id (str): The ID of the job.
-
-    Returns:
-        JSONResponse: A JSON response containing the job status.
-    """
-    status = await get_trial_status(tuner_run_id)
-    return JSONResponse(content=status)
-
-@app.get("/api/tuner_runs/{tuner_run_id}/results")
-async def get_tuner_results(tuner_run_id: str):
-    """
-    Retrieves the results of a tuning run.
-
-    Args:
-        tuner_run_id (str): The ID of the job.
-
-    Returns:
-        JSONResponse: A JSON response containing the tuning results.
-    """
-    if tuner_run_id not in job_results:
-        if tuner_run_id in job_statuses and job_statuses[tuner_run_id] == "COMPLETED":
-            # Create mock results if job is completed but results weren't created
-            job_results[tuner_run_id] = {
-                "tuner_run_id": tuner_run_id,
-                "results": [
-                    {
-                        "configuration_used": DEFAULT_TUNING_CONFIG,
-                        "performance_score": 100.5,
-                        "ray_id": f"{tuner_run_id}_config1"
-                    },
-                    {
-                        "configuration_used": {
-                            "ntomp": "2",
-                            "cpu_affinity": "scatter"
-                        },
-                        "performance_score": 85.2,
-                        "ray_id": f"{tuner_run_id}_config2"
-                    }
-                ]
-            }
+@app.get("/api/tuner_runs/overview")
+def get_tuner_runs_overview():
+    job_summaries = []
+    for job_id, info in job_statuses.items():
+        status = info.get("status")
+        obj_ref = info.get("object_ref")  # Ray ObjectRef if present
+        summary = {
+            "tuner_run_id": job_id,
+            "status": status
+        }
+        if obj_ref:
+            # Include ObjectRef ID
+            summary["object_ref"] = str(obj_ref)
+            # Check if the Ray task is finished without blocking
+            ready_refs, _ = ray.wait([obj_ref], timeout=0)  # immediate return
+            is_ready = len(ready_refs) > 0
+            summary["task_ready"] = is_ready
+            if is_ready:
+                try:
+                    summary["result"] = ray.get(obj_ref)
+                except Exception as e:
+                    # Handle exceptions if the task failed
+                    summary["result"] = f"Task error: {e}"
         else:
-            raise HTTPException(status_code=404, detail=f"Results for tuner run {tuner_run_id} not found")
+            # No associated Ray task (perhaps job setup failed before launching)
+            summary["task_ready"] = False
+            summary["result"] = None
+        job_summaries.append(summary)
 
-    return JSONResponse(content=job_results[tuner_run_id])
+@app.get("/api/tuner_runs/{job_id}/status")
+async def get_status(job_id: str):
+    if job_id not in job_statuses:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job = job_statuses[job_id]
+    future = job.get("future")
+    if future:
+        ready, _ = ray.wait([future], timeout=0)
+        if ready:
+            result = ray.get(future)
+            job["status"] = "COMPLETED"
+            job["result"] = result
+    return {"tuner_run_id": job_id, "status": job["status"], "result": job.get("result")}
 
-@app.delete("/api/tuner_runs/{tuner_run_id}")
-async def delete_tuner_run(tuner_run_id: str):
-    """
-    Deletes a tuning run and its results.
+@app.get("/api/tuner_runs/{job_id}/results")
+async def get_results(job_id: str):
+    if job_id not in job_statuses or job_statuses[job_id]["status"] != "COMPLETED":
+        raise HTTPException(status_code=404, detail="Results not available")
+    return {"tuner_run_id": job_id, "results": [job_statuses[job_id].get("result")]}
 
-    Args:
-        tuner_run_id (str): The ID of the job.
-
-    Returns:
-        JSONResponse: A JSON response confirming deletion.
-    """
-    if tuner_run_id in job_statuses:
-        job_statuses.pop(tuner_run_id, None)
-        job_results.pop(tuner_run_id, None)
-        return JSONResponse(content={"status": f"Tuning run {tuner_run_id} successfully deleted"})
+@app.delete("/api/tuner_runs/{job_id}")
+async def delete_tuner_run(job_id: str):
+    if job_id in job_statuses:
+        del job_statuses[job_id]
+        return {"status": f"Tuning run {job_id} deleted"}
     else:
-        raise HTTPException(status_code=404, detail=f"Tuner run {tuner_run_id} not found")
-
-@app.get("/")
-async def root():
-    return {"message": "Welcome to GROMACS Tuner API"}
-
-if __name__ == "__main__":
-    import uvicorn
-    ray.init(address="ray://127.0.0.1:10001", log_to_driver=True)  # Matching ray_simple.py initialization
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-    ray.shutdown()
+        raise HTTPException(status_code=404, detail="Job not found")

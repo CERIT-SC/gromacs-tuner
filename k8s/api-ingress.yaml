@@ -1,3 +1,4 @@
+# k8s/api-ingress.yaml
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -9,17 +10,17 @@ metadata:
 spec:
   ingressClassName: nginx
   tls:
-  - hosts:
-    - gromacs-tuner.cerit-sc.cz
-    secretName: gromacs-tuner-tls
+    - hosts:
+        - "gromacs-tuner.dyn.cloud.e-infra.cz"
+      secretName: gromacs-tuner-dyn-cloud-e-infra-cz-tls
   rules:
-  - host: gromacs-tuner.cerit-sc.cz
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: gromacs-tuner-api-svc
-            port:
-              number: 8000
+    - host: "gromacs-tuner.dyn.cloud.e-infra.cz"
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: gromacs-tuner-api-svc
+                port:
+                  number: 8000
