@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gromacs-tuner-api
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gromacs-tuner-api
+  template:
+    metadata:
+      labels:
+        app: gromacs-tuner-api
+    spec:
+      securityContext:
+        fsGroupChangePolicy: OnRootMismatch
+        fsGroup: 1000
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: api
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        imagePullPolicy: Always
+        env:
+          - name: RAY_ADDRESS
+            value: "ray://raycluster-complete-head-svc:10001"
+        ports:
+        - containerPort: 8000
+        resources:
+          limits:
+            cpu: "2"
+            memory: "2Gi"
+          requests:
+            cpu: "1"
+            memory: "1Gi"
+        securityContext:
+          runAsUser: 1000
+          capabilities:
+            drop:
+              - ALL
+          allowPrivilegeEscalation: false
+        volumeMounts:
+        - name: gromacs-pvc
+          mountPath: /tmp/tpr
+      volumes:
+      - name: gromacs-pvc
+        persistentVolumeClaim:
+          claimName: gromacs-pvc

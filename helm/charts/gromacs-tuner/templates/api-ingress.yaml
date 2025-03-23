@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gromacs-tuner-api-ingress
+  namespace: {{ .Values.namespace }}
+  annotations:
+    kubernetes.io/tls-acme: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - "{{ .Values.ingress.host }}"
+      secretName: "{{ .Values.ingress.tlsSecretName }}"
+  rules:
+    - host: "{{ .Values.ingress.host }}"
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: gromacs-tuner-api-svc
+                port:
+                  number: 8000

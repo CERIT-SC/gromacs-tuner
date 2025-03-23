@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gromacs-upload-pod
+  namespace: {{ .Values.namespace }}
+spec:
+  containers:
+  - name: gromacs-container
+    image: alpine
+    command: ["sleep", "365d"]
+    securityContext:
+      runAsUser: 1000
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+          - ALL
+      runAsNonRoot: true
+      seccompProfile:
+        type: RuntimeDefault
+    volumeMounts:
+    - name: gromacs-pvc-volume
+      mountPath: /mnt/tpr
+  volumes:
+  - name: gromacs-pvc-volume
+    persistentVolumeClaim:
+      claimName: gromacs-pvc
+  restartPolicy: Never
