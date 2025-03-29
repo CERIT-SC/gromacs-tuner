@@ -8,7 +8,11 @@ if __name__ == "__main__":
     print(f"Connecting to Ray at: {ray_address}")
 
     try:
-        ray.init(address=ray_address, log_to_driver=True)
+        ray.init(
+            address=ray_address,
+            log_to_driver=True,
+            runtime_env={"working_dir": "/app"}
+        )
         print("Successfully connected to Ray cluster")
         uvicorn.run(app, host="0.0.0.0", port=8000)
     except Exception as e:

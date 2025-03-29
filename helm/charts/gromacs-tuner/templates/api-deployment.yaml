@@ -30,10 +30,10 @@ spec:
         - containerPort: 8000
         resources:
           limits:
-            cpu: "2"
+            cpu: "1"
             memory: "2Gi"
           requests:
-            cpu: "1"
+            cpu: "0.5"
             memory: "1Gi"
         securityContext:
           runAsUser: 1000

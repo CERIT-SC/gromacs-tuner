@@ -2,7 +2,7 @@
 namespace: gromacs-tuner-ns
 image:
   repository: cerit.io/adamondrejka/gromacs-tuner-api
-  tag: "1.1"
+  tag: "1.2"
 ingress:
   host: "gromacs-tuner.dyn.cloud.e-infra.cz"
   tlsSecretName: "gromacs-tuner-dyn-cloud-e-infra-cz-tls"

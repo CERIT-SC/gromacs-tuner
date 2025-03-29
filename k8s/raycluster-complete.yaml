@@ -60,10 +60,10 @@ spec:
   workerGroupSpecs:
   - replicas: 1
     minReplicas: 1
-    maxReplicas: 8
+    maxReplicas: 1
     groupName: gromacs-group
     rayStartParams:
-      num-cpus: '8'
+      num-cpus: '16'
       num-gpus: '1'
     template:
       spec:
@@ -83,12 +83,12 @@ spec:
               name: gromacs-pvc
           resources:
             limits:
-              cpu: "10"
-              memory: "24Gi"
+              cpu: "64"
+              memory: "32Gi"
               nvidia.com/gpu: "1"
             requests:
-              cpu: "8"
-              memory: "4Gi"
+              cpu: "4"
+              memory: "16Gi"
           securityContext:
             runAsUser: 1000
             runAsGroup: 100
