@@ -1,63 +1,98 @@
 import logging
 import os
-import uuid
+import re
 import subprocess
+
 import ray
 from ray import tune
-import re
-import random
-from itertools import product
+from ray.air import session
 
 logger = logging.getLogger("gromacs-tuner.tuner")
 logger.setLevel(logging.INFO)
 
 
+@ray.remote
+class TuneStatusActor:
+    def __init__(self):
+        self.status_by_job = {}
+
+    def register_job(self, job_id, total_trials):
+        self.status_by_job[job_id] = {
+            "total": total_trials,
+            "trials": {},
+        }
+
+    def update_trial(self, job_id, trial_id, config, status, performance=None):
+        if job_id not in self.status_by_job:
+            return
+        self.status_by_job[job_id]["trials"][trial_id] = {
+            "config": config,
+            "status": status,
+            "performance": performance,
+        }
+
+    def get_status(self, job_id):
+        job = self.status_by_job.get(job_id)
+        if not job:
+            return None
+
+        trials = []
+        summary = {"RUNNING": 0, "PENDING": 0, "TERMINATED": 0, "ERROR": 0}
+        for trial_id, trial in job["trials"].items():
+            status = trial["status"]
+            summary[status] = summary.get(status, 0) + 1
+            config_clean = {k: v for k, v in trial["config"].items() if k not in ("tpr_path", "status")}
+            trials.append({
+                "id": trial_id,
+                "status": status,
+                **config_clean,
+                "performance": trial.get("performance"),
+            })
+
+        return {
+            "tuner_run_id": job_id,
+            "summary": summary,
+            "trials": trials,
+            "cluster_resources": _get_cluster_status()
+        }
+
+
+def _get_cluster_status():
+    try:
+        available = ray.available_resources()
+        total = ray.cluster_resources()
+        cpu = f"{total.get('CPU', 0) - available.get('CPU', 0):.0f}/{total.get('CPU', 0):.0f} CPUs"
+        gpu = f"{total.get('GPU', 0) - available.get('GPU', 0):.0f}/{total.get('GPU', 0):.0f} GPUs"
+        return f"{cpu}, {gpu} used"
+    except Exception:
+        return "N/A"
+
+
 def gromacs_trial(config):
     env = os.environ.copy()
-    env["OMP_NUM_THREADS"] = str(config["ntomp"])
+    env["OMP_NUM_THREADS"] = str(config.get("ntomp", 1))
 
     command = [
-        "mpirun", "-np", str(config["np"]),
+        "mpirun", "-np", str(config.get("np", 1)),
         "gmx", "mdrun",
-        "-ntomp", str(config["ntomp"]),
+        "-ntomp", str(config.get("ntomp", 1)),
         "-s", config["tpr_path"]
     ]
 
-    # if config.get("mdrun_flags"):
-    #     command.extend(config["mdrun_flags"].split())
-
-    logger.info(f"Running GROMACS trial with config: {config} and command: {' '.join(command)}")
-
-    result = subprocess.run(
-        command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        env=env
-    )
-
+    logger.info(f"Running GROMACS trial with config: {config}")
+    result = subprocess.run(command, capture_output=True, text=True, env=env)
     output = result.stdout + "\n" + result.stderr
 
+    # Save debug output
     debug_path = "/tmp/gmx_debug_output.txt"
     with open(debug_path, "w") as f:
         f.write(output)
-    logger.info(f"Saved debug GROMACS output to {debug_path}")
 
-    performance = 0.0
+    # Extract performance
     match = re.search(r"Performance:\s+([\d.]+)", output)
-    if match:
-        performance = float(match.group(1))
-        logger.info(f"Extracted performance: {performance} ns/day")
-    else:
-        logger.warning("Performance metric not found in GROMACS output.")
-        logger.warning("Dumping full output below:")
-        logger.warning(output)
+    performance = float(match.group(1)) if match else 0.0
 
-    log_path = f"/tmp/tpr/{uuid.uuid4()}_simulation.log"
-    os.makedirs(os.path.dirname(log_path), exist_ok=True)
-    with open(log_path, "w") as log_file:
-        log_file.write(output)
-
+    session.report({"performance": performance})
     return {
         "performance": performance,
         "stdout": result.stdout,
@@ -66,66 +101,53 @@ def gromacs_trial(config):
     }
 
 
-def generate_valid_configs(tpr_path, limit=10):
-    np_options = [1, 2, 4, 8, 16]
-    ntomp_options = [1, 2, 4, 8]
+@ray.remote
+def run_tuning(job_id, tpr_path, status_actor: ray.actor.ActorHandle):
+    np_vals = [1, 2, 4, 8]
+    ntomp_vals = [1, 2, 4, 8]
 
-    all_configs = [
-        {
-            "np": np,
-            "ntomp": ntomp,
-            "tpr_path": tpr_path,
-            # "gpu": True/False,
-            # "mdrun_flags": "-v"
-        }
-        for np, ntomp in product(np_options, ntomp_options)
-        if np * ntomp <= 32
+    # Generate only valid configs
+    valid_configs = [
+        {"np": np_val, "ntomp": ntomp_val, "tpr_path": tpr_path}
+        for np_val in np_vals
+        for ntomp_val in ntomp_vals
+        if np_val * ntomp_val <= 32
     ]
 
-    if len(all_configs) <= limit:
-        return all_configs
-    return random.sample(all_configs, limit)
+    ray.get(status_actor.register_job.remote(job_id, len(valid_configs)))
 
+    def report_status(trial_id, result):
+        perf = result.get("performance")
+        config = result.get("config", {})
+        ray.get(status_actor.update_trial.remote(job_id, trial_id, config, "TERMINATED", perf))
 
-@ray.remote
-def run_tuning(job_id, tpr_path):
-    logger.info(f"Starting tuning run for job_id: {job_id} with tpr_path: {tpr_path}")
+    class StatusReportingCallback(tune.Callback):
+        def on_trial_start(self, iteration, trials, trial, **kwargs):
+            ray.get(status_actor.update_trial.remote(
+                job_id, trial.trial_id, trial.config, "RUNNING"
+            ))
 
-    try:
-        valid_configs = generate_valid_configs(tpr_path, limit=10)
+        def on_trial_complete(self, iteration, trials, trial, **kwargs):
+            report_status(trial.trial_id, trial.last_result)
 
-        search_space = tune.grid_search(valid_configs)
+        def on_trial_fail(self, iteration, trials, trial, **kwargs):
+            ray.get(status_actor.update_trial.remote(
+                job_id, trial.trial_id, trial.config, "ERROR"
+            ))
 
-        wrapped_trial = tune.with_resources(
-            gromacs_trial,
-            lambda config: {"cpu": config["np"] * config["ntomp"]}
-        )
+    wrapped_trial = tune.with_resources(
+        gromacs_trial,
+        lambda config: {"cpu": config.get("np", 1) * config.get("ntomp", 1)}
+    )
 
-        analysis = tune.run(
-            wrapped_trial,
-            name=job_id,
-            config=search_space,
-            num_samples=1
-        )
-
-    except Exception as e:
-        logger.error(f"Tuning run for job_id: {job_id} failed with error: {str(e)}")
-        raise e
-
-    trials_info = []
-    for trial in analysis.trials:
-        trials_info.append({
-            "trial_id": trial.trial_id,
-            "np": trial.config["np"],
-            "ntomp": trial.config["ntomp"],
-            "status": str(trial.status),
-            "performance": trial.last_result.get("performance", 0) if trial.last_result else 0
-        })
+    analysis = tune.run(
+        wrapped_trial,
+        name=job_id,
+        config=tune.grid_search(valid_configs),
+        num_samples=1,
+        callbacks=[StatusReportingCallback()],
+        fail_fast=True
+    )
 
     best_config = analysis.get_best_config(metric="performance", mode="max")
-    logger.info(f"Tuning run for job_id: {job_id} completed with best_config: {best_config}")
-    return {
-        "num_trials": len(trials_info),
-        "trials": trials_info,
-        "best_config": best_config
-    }
+    return best_config
