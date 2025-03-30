@@ -68,8 +68,8 @@ spec:
       num-gpus: '1'
     template:
       spec:
-{{/*        nodeSelector: # Explicitly asking for A40 as it is most available*/}}
-{{/*          nvidia.com/gpu.product: 'NVIDIA-A40'*/}}
+        nodeSelector: # Explicitly asking for A40 as it is most available
+          nvidia.com/gpu.product: 'NVIDIA-A40'
         containers:
         - name: ray-worker
           image: cerit.io/adamondrejka/gmx-cuda-ray-2-42-1-with-user
@@ -82,15 +82,17 @@ spec:
               name: ray-logs
             - mountPath: /tmp/tpr
               name: gromacs-pvc
+            - mountPath: /tmp/ray_gmx_logs
+              name: gromacs-logs
           resources:
             limits:
               cpu: "128"
               memory: "128Gi"
-{{/*              nvidia.com/gpu: "1"*/}}
+              nvidia.com/gpu: "1"
             requests:
               cpu: "32"
               memory: "16Gi"
-{{/*              nvidia.com/gpu: "1"*/}}
+              nvidia.com/gpu: "1"
           securityContext:
             runAsUser: 1000
             runAsGroup: 100
@@ -103,6 +105,8 @@ spec:
               type: RuntimeDefault
         volumes:
           - name: ray-logs
+            emptyDir: {}
+          - name: gromacs-logs
             emptyDir: {}
           - name: gromacs-pvc
             persistentVolumeClaim:

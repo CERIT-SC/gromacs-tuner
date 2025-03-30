@@ -8,7 +8,6 @@ fi
 JOB_ID="$1"
 API_URL="https://gromacs-tuner.dyn.cloud.e-infra.cz/api/tuner_runs/${JOB_ID}/status"
 
-# Colors
 BOLD="\033[1m"
 RESET="\033[0m"
 GREEN="\033[32m"
@@ -42,18 +41,27 @@ while true; do
   echo ""
   echo -e "${BOLD}Trial Table:${RESET}"
 
-  # Get all keys across trials
-headers=$(echo "$response" | jq -r '[.trials[] | keys_unsorted] | add | unique | map(select(. != "id" and . != "tpr_path"))')  header_list=$(echo "$headers" | jq -r '.[]')
+  headers=$(echo "$response" | jq -r '[.trials[] | keys_unsorted] | add | unique | map(select(. != "id" and . != "tpr_path" and . != "status"))')
+  header_list=$(echo "$headers" | jq -r '.[]' | sed 's/[[:space:]]\+$//')
+
+  display_headers=()
+  for key in $header_list; do
+    if [ "$key" = "performance" ]; then
+      display_headers+=("perf")
+    else
+      display_headers+=("$key")
+    fi
+  done
+
   header_format="│ %-20s │ %-10s"
   separator="├──────────────────────┼────────────"
-
   for key in $header_list; do
     header_format+=" │ %-10s"
     separator+="┼────────────"
   done
-
   header_format+=" │\n"
   separator+="┤"
+
   header_line="┌──────────────────────┬────────────"
   for key in $header_list; do
     header_line+="┬────────────"
@@ -61,7 +69,7 @@ headers=$(echo "$response" | jq -r '[.trials[] | keys_unsorted] | add | unique |
   header_line+="┐"
 
   echo "$header_line"
-  printf "$header_format" "Trial ID" "Status" $header_list
+  printf "$header_format" "Trial ID" "Status" "${display_headers[@]}"
   echo "$separator"
 
   echo "$response" | jq -c '.trials[]' | while read -r trial; do
