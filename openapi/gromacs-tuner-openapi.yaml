@@ -42,46 +42,46 @@ paths:
                     type: string
                     description: "Current status of the tuning run."
 
-  /api/tuner_runs/{tuner_run_id}/results:
-    get:
-      summary: Retrieve tuner results.
-      description: "Fetches the parameter sets sorted by relative performance (best to worst)."
-      parameters:
-        - name: tuner_run_id
-          in: path
-          required: true
-          schema:
-            type: string
-          description: "Unique identifier of the tuner run."
-      responses:
-        "200":
-          description: "List of tested parameter configurations for the given tuning run."
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  tuner_run_id:
-                    type: string
-                    description: "Identifier of the tuner run."
-                  results:
-                    type: array
-                    description: "Array of best-performing configurations."
-                    items:
-                      type: object
-                      properties:
-                        configuration_used:
-                          type: object
-                          description: "Configuration parameters used."
-                          example:
-                            ntomp: "4"
-                            cpu_affinity: "compact"
-                        performance_score:
-                          type: number
-                          description: "Performance score."
-                        ray_id:
-                          type: string
-                          description: "Associated Ray identifier."
+#  /api/tuner_runs/{tuner_run_id}/results:
+#    get:
+#      summary: Retrieve tuner results.
+#      description: "Fetches the parameter sets sorted by relative performance (best to worst)."
+#      parameters:
+#        - name: tuner_run_id
+#          in: path
+#          required: true
+#          schema:
+#            type: string
+#          description: "Unique identifier of the tuner run."
+#      responses:
+#        "200":
+#          description: "List of tested parameter configurations for the given tuning run."
+#          content:
+#            application/json:
+#              schema:
+#                type: object
+#                properties:
+#                  tuner_run_id:
+#                    type: string
+#                    description: "Identifier of the tuner run."
+#                  results:
+#                    type: array
+#                    description: "Array of best-performing configurations."
+#                    items:
+#                      type: object
+#                      properties:
+#                        configuration_used:
+#                          type: object
+#                          description: "Configuration parameters used."
+#                          example:
+#                            ntomp: "4"
+#                            cpu_affinity: "compact"
+#                        performance_score:
+#                          type: number
+#                          description: "Performance score."
+#                        ray_id:
+#                          type: string
+#                          description: "Associated Ray identifier."
 
   /api/tuner_runs/{tuner_run_id}:
     delete:
