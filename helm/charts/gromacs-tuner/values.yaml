@@ -1,8 +1,8 @@
 # Minimal configuration values
-namespace: gromacs-tuner-ns
+namespace: krenek-ns
 image:
   repository: cerit.io/adamondrejka/gromacs-tuner-api
   tag: "1.2"
 ingress:
-  host: "gromacs-tuner.dyn.cloud.e-infra.cz"
-  tlsSecretName: "gromacs-tuner-dyn-cloud-e-infra-cz-tls"
+  host: "gromacs-tuner-ljocha.dyn.cloud.e-infra.cz"
+  tlsSecretName: "gromacs-tuner-ljocha-dyn-cloud-e-infra-cz-tls"

@@ -64,7 +64,7 @@ spec:
     maxReplicas: 1
     groupName: gromacs-group
     rayStartParams:
-      num-cpus: '32'
+      num-cpus: '48'
       num-gpus: '1'
     template:
       spec:
@@ -86,12 +86,12 @@ spec:
               name: gromacs-logs
           resources:
             limits:
-              cpu: "128"
+              cpu: "48"
               memory: "128Gi"
               nvidia.com/gpu: "1"
             requests:
-              cpu: "32"
-              memory: "16Gi"
+              cpu: "48"
+              memory: "128Gi"
               nvidia.com/gpu: "1"
           securityContext:
             runAsUser: 1000
