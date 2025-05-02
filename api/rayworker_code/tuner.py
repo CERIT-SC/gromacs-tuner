@@ -38,7 +38,7 @@ class TuneStatusActor:
     def update_trial(self, job_id, trial_id, config, status, performance=None):
         logger.info(
             f"Updating trial {trial_id} for job {job_id} "
-            f"with status {status} and performance={performance}"
+            f"with status={status}, performance={performance}"
         )
         if job_id not in self.status_by_job:
             return
@@ -54,24 +54,26 @@ class TuneStatusActor:
         if not job:
             return None
 
-        trials = []
         summary = {"RUNNING": 0, "PENDING": 0, "TERMINATED": 0, "ERROR": 0}
-        for trial_id, trial in job["trials"].items():
-            status = trial["status"]
-            summary[status] = summary.get(status, 0) + 1
-            config_clean = {
-                k: v
-                for k, v in trial["config"].items()
-                if k not in ("tpr_path",)
-            }
-            trials.append(
-                {
-                    "id": trial_id,
-                    "status": status,
-                    **config_clean,
-                    "performance": trial.get("performance"),
-                }
-            )
+        trials = []
+        for tid, t in job["trials"].items():
+            st = t["status"]
+            summary[st] = summary.get(st, 0) + 1
+
+            # 1) Extract nested config if present
+            raw_cfg = t["config"]
+            if "pme_choice" in raw_cfg:
+                flat_cfg = raw_cfg["pme_choice"].copy()
+            else:
+                flat_cfg = raw_cfg
+            cfg = {k: v for k, v in flat_cfg.items() if k != "tpr_path"}
+
+            trials.append({
+                "id": tid,
+                "status": st,
+                **cfg,
+                "performance": t.get("performance")
+            })
 
         return {
             "tuner_run_id": job_id,
@@ -83,44 +85,43 @@ class TuneStatusActor:
 def _get_cluster_status():
     logger.info("Getting cluster status")
     try:
-        available = ray.available_resources()
+        avail = ray.available_resources()
         total = ray.cluster_resources()
-        used_cpu = total.get("CPU", 0) - available.get("CPU", 0)
-        used_gpu = total.get("GPU", 0) - available.get("GPU", 0)
-        return f"{used_cpu:.0f}/{total.get('CPU', 0):.0f} CPUs, " \
-               f"{used_gpu:.0f}/{total.get('GPU', 0):.0f} GPUs used"
+        used_cpu = total.get("CPU", 0) - avail.get("CPU", 0)
+        used_gpu = total.get("GPU", 0) - avail.get("GPU", 0)
+        return f"{used_cpu}/{total.get('CPU',0)} CPUs, {used_gpu}/{total.get('GPU',0)} GPUs used"
     except Exception as e:
         logger.error(f"Error getting cluster status: {e}")
         return "N/A"
 
-
 def valid_config(config):
+    # Extract nested config only when needed
     config_to_validate = config
     if "pme_choice" in config_to_validate:
         config_to_validate = config.get("pme_choice", {})
 
-    logger.info(f"Validating config: {config}")
+    logger.info(f"Validating config: {config_to_validate}")
 
     # Rule 1: Total threads must not exceed 32
-    if config.get("np", 1) * config.get("ntomp", 1) > 32:
+    if config_to_validate.get("np", 1) * config_to_validate.get("ntomp", 1) > 32:
         logger.warning(
-            f"Invalid config: threads {config.get('np', 1)} * {config.get('ntomp', 1)} > 32"
+            f"Invalid config: threads {config_to_validate.get('np',1)} * {config_to_validate.get('ntomp',1)} > 32"
         )
         return False
 
     # Rule 2: Can't have nb on CPU while pme on GPU
-    if config.get("nb") == "cpu" and config.get("pme") == "gpu":
+    if config_to_validate.get("nb") == "cpu" and config_to_validate.get("pme") == "gpu":
         logger.warning("Invalid config: nb on CPU while pme on GPU")
         return False
 
     # Rule 3: PME on GPU requires single rank
-    if config.get("pme") == "gpu" and config.get("np", 1) > 1:
+    if config_to_validate.get("pme") == "gpu" and config_to_validate.get("np", 1) > 1:
         logger.warning(
-            f"Invalid config: PME on GPU requires single rank, got np={config.get('np', 1)}"
+            f"Invalid config: PME on GPU requires single rank, got np={config_to_validate.get('np',1)}"
         )
         return False
 
-    logger.info(f"Config validated successfully: {config}")
+    logger.info(f"Config validated successfully: {config_to_validate}")
     return True
 
 def gromacs_trial(config):
@@ -134,7 +135,7 @@ def gromacs_trial(config):
         session.report({"performance": 0.0})
         return
 
-    # Copy the environment, which was pre-populated in trial_wrapper
+    # Environment was already set in wrapper
     env = os.environ.copy()
     logger.info(
         f"[{trial_id}] OMP_NUM_THREADS={env.get('OMP_NUM_THREADS')} "
@@ -147,15 +148,20 @@ def gromacs_trial(config):
     except Exception as e:
         logger.warning(f"[{trial_id}] No Ray GPU IDs available: {e}")
 
+    exec_config = config
+    if "pme_choice" in config:
+        exec_config = config.get("pme_choice", {})
+        exec_config["tpr_path"] = config.get("tpr_path")
+
     command = [
-        "mpirun", "-np", str(config["np"]),
+        "mpirun", "-np", str(exec_config["np"]),
         "gmx", "mdrun",
-        "-ntomp", str(config["ntomp"]),
-        "-nb", config["nb"],
-        "-pme", config["pme"],
-        "-s", config["tpr_path"]
+        "-ntomp", str(exec_config["ntomp"]),
+        "-nb", exec_config["nb"],
+        "-pme", exec_config["pme"],
+        "-s", exec_config["tpr_path"]
     ]
-    if config["pme"] == "gpu":
+    if exec_config["pme"] == "gpu":
         command.extend(["-npme", "1"])
 
     logger.info(f"[{trial_id}] Running GROMACS command: {' '.join(command)}")
@@ -165,16 +171,14 @@ def gromacs_trial(config):
     with open(stdout_path, "w") as out, open(stderr_path, "w") as err:
         subprocess.run(command, stdout=out, stderr=err, text=True, env=env)
 
-    combined_output = (
-        open(stdout_path).read() + "\n" + open(stderr_path).read()
-    )
-    logger.info(f"Combined GROMACS output:\n{combined_output}")
+    output = open(stdout_path).read() + "\n" + open(stderr_path).read()
+    logger.info(f"Combined GROMACS output:\n{output}")
 
-    match = re.search(r"Performance:\s+(\d+\.\d+)", combined_output)
-    performance = float(match.group(1)) if match else 0.0
-    logger.info(f"[{trial_id}] Trial completed with performance: {performance}")
+    match = re.search(r"Performance:\s+(\d+\.\d+)", output)
+    perf = float(match.group(1)) if match else 0.0
+    logger.info(f"[{trial_id}] Trial completed with performance: {perf}")
 
-    session.report({"performance": performance})
+    session.report({"performance": perf})
 
 @ray.remote
 def run_tuning(job_id, tpr_path, status_actor: ray.actor.ActorHandle, num_samples=3):
@@ -183,7 +187,6 @@ def run_tuning(job_id, tpr_path, status_actor: ray.actor.ActorHandle, num_sample
         f"and num_samples {num_samples}"
     )
 
-    # 1) Define the HyperOpt search space
     search_space = {
         "pme_choice": hp.choice("pme_choice", [
             {
@@ -201,38 +204,34 @@ def run_tuning(job_id, tpr_path, status_actor: ray.actor.ActorHandle, num_sample
         ])
     }
 
-    # 2) Set up HyperOpt as the search algorithm
     search_alg = HyperOptSearch(
         space=search_space,
         metric="performance",
         mode="max"
     )
 
-    # 3) Register the job with the status actor
     ray.get(status_actor.register_job.remote(job_id, num_samples))
 
-    # 4) Wrap trial invocation: set env vars and inject tpr_path
+    # 3) Trial wrapper: extract nested config for env
     def trial_wrapper(config):
-        nested_config = config.get("pme_choice", {})
-
-        # Set environment variables using the nested values
-        os.environ["OMP_NUM_THREADS"] = str(nested_config.get("ntomp", 1))
+        config_for_env = config.get("pme_choice", config)
+        os.environ["OMP_NUM_THREADS"] = str(config_for_env.get("ntomp", 1))
         os.environ["CUDA_VISIBLE_DEVICES"] = "0"
         config["tpr_path"] = tpr_path
         return gromacs_trial(config)
 
-    # 5) Callback for live status reporting
+    # 4) Callback for live reporting
     class StatusReportingCallback(tune.Callback):
-        def __init__(self, status_actor):
-            self.status_actor = status_actor
+        def __init__(self, actor):
+            self.actor = actor
 
         def on_trial_start(self, iteration, trials, trial, **info):
-            self.status_actor.update_trial.remote(
+            self.actor.update_trial.remote(
                 job_id, trial.trial_id, trial.config, "RUNNING"
             )
 
         def on_trial_result(self, iteration, trials, trial, result, **info):
-            self.status_actor.update_trial.remote(
+            self.actor.update_trial.remote(
                 job_id,
                 trial.trial_id,
                 trial.config,
@@ -241,15 +240,15 @@ def run_tuning(job_id, tpr_path, status_actor: ray.actor.ActorHandle, num_sample
             )
 
         def on_trial_complete(self, iteration, trials, trial, **info):
-            self.status_actor.update_trial.remote(
+            self.actor.update_trial.remote(
                 job_id,
                 trial.trial_id,
                 trial.config,
-                "COMPLETED",
+                "TERMINATED",  # Change from "COMPLETED" to match the status in get_status
                 performance=trial.last_result.get("performance")
             )
 
-    # 6) Construct and run the Tuner
+    # 5) Construct and run the tuner (no param_space — HyperOptSearch drives sampling)
     tuner = Tuner(
         trainable=trial_wrapper,
         tune_config=TuneConfig(
@@ -266,6 +265,5 @@ def run_tuning(job_id, tpr_path, status_actor: ray.actor.ActorHandle, num_sample
         )
     )
 
-    # 7) Execute the tuning experiment
     results = tuner.fit()
     return results
