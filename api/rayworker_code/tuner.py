@@ -5,14 +5,13 @@ import os
 import re
 import subprocess
 import sys
-import random
 
 import ray
+from hyperopt import hp
 from ray import tune
 from ray.air import session, RunConfig
 from ray.tune import Tuner, TuneConfig
 from ray.tune.search.hyperopt import HyperOptSearch
-from hyperopt import hp
 
 logger = logging.getLogger("gromacs-tuner.tuner")
 logger.setLevel(logging.INFO)
@@ -60,7 +59,7 @@ class TuneStatusActor:
             st = t["status"]
             summary[st] = summary.get(st, 0) + 1
 
-            # 1) Extract nested config if present
+            # Unwrap nested config for reporting
             raw_cfg = t["config"]
             if "pme_choice" in raw_cfg:
                 flat_cfg = raw_cfg["pme_choice"].copy()
@@ -148,10 +147,11 @@ def gromacs_trial(config):
     except Exception as e:
         logger.warning(f"[{trial_id}] No Ray GPU IDs available: {e}")
 
-    exec_config = config
     if "pme_choice" in config:
-        exec_config = config.get("pme_choice", {})
+        exec_config = config.get("pme_choice", {}).copy()
         exec_config["tpr_path"] = config.get("tpr_path")
+    else:
+        exec_config = config
 
     command = [
         "mpirun", "-np", str(exec_config["np"]),
@@ -161,7 +161,8 @@ def gromacs_trial(config):
         "-pme", exec_config["pme"],
         "-s", exec_config["tpr_path"]
     ]
-    if exec_config["pme"] == "gpu":
+
+    if exec_config.get("pme") == "cpu" and exec_config.get("np", 1) > 1:
         command.extend(["-npme", "1"])
 
     logger.info(f"[{trial_id}] Running GROMACS command: {' '.join(command)}")
@@ -181,7 +182,7 @@ def gromacs_trial(config):
     session.report({"performance": perf})
 
 @ray.remote
-def run_tuning(job_id, tpr_path, status_actor: ray.actor.ActorHandle, num_samples=3):
+def run_tuning(job_id, tpr_path, status_actor: ray.actor.ActorHandle, num_samples=10):
     logger.info(
         f"Running tuning for job {job_id} with tpr_path {tpr_path} "
         f"and num_samples {num_samples}"
@@ -212,7 +213,6 @@ def run_tuning(job_id, tpr_path, status_actor: ray.actor.ActorHandle, num_sample
 
     ray.get(status_actor.register_job.remote(job_id, num_samples))
 
-    # 3) Trial wrapper: extract nested config for env
     def trial_wrapper(config):
         config_for_env = config.get("pme_choice", config)
         os.environ["OMP_NUM_THREADS"] = str(config_for_env.get("ntomp", 1))
@@ -220,7 +220,6 @@ def run_tuning(job_id, tpr_path, status_actor: ray.actor.ActorHandle, num_sample
         config["tpr_path"] = tpr_path
         return gromacs_trial(config)
 
-    # 4) Callback for live reporting
     class StatusReportingCallback(tune.Callback):
         def __init__(self, actor):
             self.actor = actor
@@ -244,11 +243,10 @@ def run_tuning(job_id, tpr_path, status_actor: ray.actor.ActorHandle, num_sample
                 job_id,
                 trial.trial_id,
                 trial.config,
-                "TERMINATED",  # Change from "COMPLETED" to match the status in get_status
+                "TERMINATED",
                 performance=trial.last_result.get("performance")
             )
 
-    # 5) Construct and run the tuner (no param_space — HyperOptSearch drives sampling)
     tuner = Tuner(
         trainable=trial_wrapper,
         tune_config=TuneConfig(
