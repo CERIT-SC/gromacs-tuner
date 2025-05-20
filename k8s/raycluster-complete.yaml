@@ -18,6 +18,9 @@ spec:
         containers:
         - name: ray-head
           image: cerit.io/adamondrejka/gmx-cuda-ray-2-42-1-with-user
+          env:
+            - name: TUNER_DB
+              value: "/data/tuner.db"
           ports:
           - containerPort: 6379
             name: gcs
@@ -34,6 +37,8 @@ spec:
               name: ray-logs
             - mountPath: /tmp/tpr
               name: gromacs-pvc
+            - mountPath: /data
+              name: gromacs-pvc
           resources:
             limits:
               cpu: "2"
@@ -42,6 +47,7 @@ spec:
               cpu: "1"
               memory: "4Gi"
           securityContext:
+            fsGroup: 1000
             runAsUser: 1000
             runAsGroup: 100
             capabilities:
@@ -81,6 +87,8 @@ spec:
               name: ray-logs
             - mountPath: /tmp/tpr
               name: gromacs-pvc
+            - mountPath: /data
+              name: gromacs-pvc
           resources:
             limits:
               cpu: "64"
@@ -90,6 +98,7 @@ spec:
               cpu: "4"
               memory: "16Gi"
           securityContext:
+            fsGroup: 1000
             runAsUser: 1000
             runAsGroup: 100
             capabilities:

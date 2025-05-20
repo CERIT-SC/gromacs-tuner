@@ -16,6 +16,16 @@ This project deploys a tuning API for GROMACS using Ray Tune on Kubernetes.
     -   Set the `namespace` where the application will be deployed.
     -   Specify the `ingress.host` for accessing the API and the `ingress.tls.secretName` for TLS configuration.
     -   Provide the complete Docker `image.repository` and `image.tag` for the API.
+    - Create the Kubernetes Secret for API authentication:
+
+      ```bash
+      kubectl create secret generic tuner-auth \
+        --from-literal=user=admin \
+        --from-literal=password='strong-secret-here' \
+        --namespace <your_namespace>
+      ```
+
+      Replace `'strong-secret-here'` with a secure password. This secret is required for HTTP Basic Auth on all tuning API endpoints.
 
 2.  **Deploy the Chart:**
 
@@ -52,6 +62,8 @@ This project deploys a tuning API for GROMACS using Ray Tune on Kubernetes.
     ```
 
     This script submits the specified `.tpr` file to the API. The API will return a JSON response containing a `tuner_run_id`.
+
+    The API is protected using HTTP Basic Auth. You must provide the `admin` username and the password configured in the Kubernetes Secret when accessing any endpoint.
 
 2.  **Poll Job Status:**
 

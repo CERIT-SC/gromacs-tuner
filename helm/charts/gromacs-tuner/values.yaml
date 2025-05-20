@@ -6,3 +6,6 @@ image:
 ingress:
   host: "gromacs-tuner.dyn.cloud.e-infra.cz"
   tlsSecretName: "gromacs-tuner-dyn-cloud-e-infra-cz-tls"
+auth:
+  user: "admin"
+  password: "strong-secret-here"
