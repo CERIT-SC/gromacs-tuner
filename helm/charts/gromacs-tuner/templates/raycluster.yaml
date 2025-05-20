@@ -7,6 +7,7 @@ metadata:
   namespace: {{ .Values.namespace }}
 spec:
   rayVersion: '2.42.1'
+
   headGroupSpec:
     serviceType: ClusterIP
     rayStartParams:
@@ -16,48 +17,48 @@ spec:
       metadata:
         labels: {}
       spec:
+        securityContext:
+          fsGroup: 1000
+          fsGroupChangePolicy: OnRootMismatch
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
+
         containers:
         - name: ray-head
           image: cerit.io/adamondrejka/gmx-cuda-ray-2-42-1-with-user
+
           ports:
-          - containerPort: 6379
-            name: gcs
-          - containerPort: 8265
-            name: dashboard
-          - containerPort: 10001
-            name: client
+            - { containerPort: 6379, name: gcs }
+            - { containerPort: 8265, name: dashboard }
+            - { containerPort: 10001, name: client }
+
           lifecycle:
             preStop:
               exec:
                 command: ["/bin/sh","-c","ray stop"]
+
           volumeMounts:
-            - mountPath: /tmp/ray
-              name: ray-logs
-            - mountPath: /tmp/tpr
-              name: gromacs-pvc
+            - { mountPath: /tmp/ray, name: ray-logs }
+            - { mountPath: /tmp/tpr, name: gromacs-pvc }
+            - { mountPath: /data,    name: gromacs-pvc }
+
           resources:
-            limits:
-              cpu: "1"
-              memory: "8Gi"
-            requests:
-              cpu: "0.5"
-              memory: "4Gi"
+            limits:   { cpu: "1",   memory: "8Gi" }
+            requests: { cpu: "0.5", memory: "4Gi" }
+
           securityContext:
             runAsUser: 1000
             runAsGroup: 100
-            capabilities:
-              drop:
-                - ALL
+            capabilities: { drop: [ "ALL" ] }
             allowPrivilegeEscalation: false
             runAsNonRoot: true
-            seccompProfile:
-              type: RuntimeDefault
+            seccompProfile: { type: RuntimeDefault }
+
         volumes:
-          - name: ray-logs
-            emptyDir: {}
-          - name: gromacs-pvc
-            persistentVolumeClaim:
-              claimName: gromacs-pvc
+          - { name: ray-logs, emptyDir: {} }
+          - { name: gromacs-pvc, persistentVolumeClaim: { claimName: gromacs-pvc } }
+
   workerGroupSpecs:
   - replicas: 1
     minReplicas: 1
@@ -66,48 +67,52 @@ spec:
     rayStartParams:
       num-cpus: '32'
       num-gpus: '1'
+
     template:
       spec:
-        nodeSelector: # Explicitly asking for A40 as it is most available
+        nodeSelector:
           nvidia.com/gpu.product: 'NVIDIA-A40'
+
+        securityContext:
+          fsGroup: 1000                     # pod‑level
+          fsGroupChangePolicy: OnRootMismatch
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
+
         containers:
         - name: ray-worker
           image: cerit.io/adamondrejka/gmx-cuda-ray-2-42-1-with-user
+
           lifecycle:
             preStop:
-              exec:
-                command: ["/bin/sh","-c","ray stop"]
+              exec: { command: ["/bin/sh","-c","ray stop"] }
+
           volumeMounts:
-            - mountPath: /tmp/ray
-              name: ray-logs
-            - mountPath: /tmp/tpr
-              name: gromacs-pvc
-            - mountPath: /tmp/ray_gmx_logs
-              name: gromacs-logs
+            - { mountPath: /tmp/ray,         name: ray-logs }
+            - { mountPath: /tmp/tpr,         name: gromacs-pvc }
+            - { mountPath: /tmp/ray_gmx_logs, name: gromacs-logs }
+            - { mountPath: /data,            name: gromacs-pvc }  # ← new
+
           resources:
             limits:
-              cpu: "128"
+              cpu: "32"
               memory: "128Gi"
               nvidia.com/gpu: "1"
             requests:
               cpu: "32"
               memory: "16Gi"
               nvidia.com/gpu: "1"
+
           securityContext:
             runAsUser: 1000
             runAsGroup: 100
-            capabilities:
-              drop:
-                - ALL
+            capabilities: { drop: [ "ALL" ] }
             allowPrivilegeEscalation: false
             runAsNonRoot: true
-            seccompProfile:
-              type: RuntimeDefault
+            seccompProfile: { type: RuntimeDefault }
+
         volumes:
-          - name: ray-logs
-            emptyDir: {}
-          - name: gromacs-logs
-            emptyDir: {}
-          - name: gromacs-pvc
-            persistentVolumeClaim:
-              claimName: gromacs-pvc
+          - { name: ray-logs,      emptyDir: {} }
+          - { name: gromacs-logs, emptyDir: {} }
+          - { name: gromacs-pvc,  persistentVolumeClaim: { claimName: gromacs-pvc } }

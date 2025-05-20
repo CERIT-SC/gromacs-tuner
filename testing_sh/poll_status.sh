@@ -14,20 +14,27 @@ GREEN="\033[32m"
 YELLOW="\033[33m"
 RED="\033[31m"
 BLUE="\033[34m"
-
+AUTH="admin:strong-secret-here"
 echo ""
 echo -e "${BOLD}Polling status for job:${RESET} $JOB_ID"
 
 while true; do
-  response=$(curl -s "$API_URL")
+  response=$(curl -s -u "$AUTH" "$API_URL")
 
   if [ -z "$response" ]; then
     echo -e "${RED}No response from server. Exiting.${RESET}"
     exit 1
   fi
 
-  summary=$(echo "$response" | jq -r '.summary')
-  cluster=$(echo "$response" | jq -r '.cluster_resources')
+  success=$(echo "$response" | jq -r '.success // false')
+  if [ "$success" != "true" ]; then
+    err_msg=$(echo "$response" | jq -r '.error.message // "Unknown error"')
+    echo -e "${RED}API error: $err_msg${RESET}"
+    exit 1
+  fi
+
+  summary=$(echo "$response" | jq -r '.data.summary // {}')
+  trials=$(echo "$response" | jq -c '.data.trials // []')
 
   running=$(echo "$summary" | jq -r '.RUNNING // 0')
   pending=$(echo "$summary" | jq -r '.PENDING // 0')
@@ -36,12 +43,17 @@ while true; do
 
   echo ""
   echo -e "${BOLD}Job Summary:${RESET} RUNNING: ${YELLOW}${running}${RESET}, PENDING: ${BLUE}${pending}${RESET}, TERMINATED: ${GREEN}${terminated}${RESET}, ERROR: ${RED}${error}${RESET}"
-  echo -e "${BOLD}Cluster Resources:${RESET} $cluster"
 
   echo ""
   echo -e "${BOLD}Trial Table:${RESET}"
 
-  headers=$(echo "$response" | jq -r '[.trials[] | keys_unsorted] | add | unique | map(select(. != "id" and . != "tpr_path" and . != "status"))')
+  if [ "$(echo "$trials" | jq 'length')" -eq 0 ]; then
+    echo -e "${YELLOW}No trials found yet.${RESET}"
+    sleep 30
+    continue
+  fi
+
+  headers=$(echo "$trials" | jq -r '[.[] | keys_unsorted] | add | unique | map(select(. != "id" and . != "tpr_path" and . != "status"))')
   header_list=$(echo "$headers" | jq -r '.[]' | sed 's/[[:space:]]\+$//')
 
   display_headers=()
@@ -72,7 +84,7 @@ while true; do
   printf "$header_format" "Trial ID" "Status" "${display_headers[@]}"
   echo "$separator"
 
-  echo "$response" | jq -c '.trials[]' | while read -r trial; do
+  echo "$trials" | jq -c '.[]' | while read -r trial; do
     id=$(echo "$trial" | jq -r '.id')
     status=$(echo "$trial" | jq -r '.status')
     color="$RESET"

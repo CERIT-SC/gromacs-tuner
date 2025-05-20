@@ -2,14 +2,32 @@ openapi: 3.0.0
 info:
   title: "GROMACS Tuner API"
   version: "1.1"
-  description: "API for submitting tuning requests to gromacs-tuner."
+  description: "API for submitting and monitoring GROMACS tuning runs."
+
+servers:
+  - url: https://gromacs-tuner.dyn.cloud.e-infra.cz/api
+
+security:
+  - basicAuth: []
 
 paths:
-  /api/tuner_runs:
+  /tuner_runs:
+    get:
+      summary: List active tuner jobs.
+      security:
+        - basicAuth: []
+      responses:
+        "200":
+          description: Active jobs listed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponseWithActive"
     post:
       summary: Submit a `.tpr` file for tuning.
-      description: |
-        Uploads a `.tpr` file and starts a tuning process.
+      description: Uploads a `.tpr` file and starts a tuning process.
+      security:
+        - basicAuth: []
       requestBody:
         required: true
         content:
@@ -20,114 +38,275 @@ paths:
                 file:
                   type: string
                   format: binary
-                  description: "The `.tpr` file for the simulation to be tuned."
-                tuning_options:
-                  type: object
-                  additionalProperties: true
-                  description: |
-                    Optional constraints for tuning (e.g., CPU range, memory, DD, OMP). 
-                    This is an open-ended JSON object, and its structure may evolve.
+                  description: The `.tpr` file to be tuned.
       responses:
         "200":
-          description: "Tuning run successfully started."
+          description: Tuning run successfully started.
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  tuner_run_id:
-                    type: string
-                    description: "Unique identifier for the tuning run."
-                  status:
-                    type: string
-                    description: "Current status of the tuning run."
+                $ref: "#/components/schemas/SuccessResponseWithRunID"
 
-#  /api/tuner_runs/{tuner_run_id}/results:
-#    get:
-#      summary: Retrieve tuner results.
-#      description: "Fetches the parameter sets sorted by relative performance (best to worst)."
-#      parameters:
-#        - name: tuner_run_id
-#          in: path
-#          required: true
-#          schema:
-#            type: string
-#          description: "Unique identifier of the tuner run."
-#      responses:
-#        "200":
-#          description: "List of tested parameter configurations for the given tuning run."
-#          content:
-#            application/json:
-#              schema:
-#                type: object
-#                properties:
-#                  tuner_run_id:
-#                    type: string
-#                    description: "Identifier of the tuner run."
-#                  results:
-#                    type: array
-#                    description: "Array of best-performing configurations."
-#                    items:
-#                      type: object
-#                      properties:
-#                        configuration_used:
-#                          type: object
-#                          description: "Configuration parameters used."
-#                          example:
-#                            ntomp: "4"
-#                            cpu_affinity: "compact"
-#                        performance_score:
-#                          type: number
-#                          description: "Performance score."
-#                        ray_id:
-#                          type: string
-#                          description: "Associated Ray identifier."
-
-  /api/tuner_runs/{tuner_run_id}:
+  /tuner_runs/{job_id}:
     delete:
-      summary: Delete a tuner run.
-      description: "Deletes a tuning run and removes associated results."
+      summary: Delete a tuning run.
+      security:
+        - basicAuth: []
       parameters:
-        - name: tuner_run_id
+        - name: job_id
           in: path
           required: true
           schema:
             type: string
-          description: "Unique identifier of the tuning run."
       responses:
         "200":
-          description: "tuning run successfully deleted."
+          description: Tuning run successfully deleted.
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    description: "Status message confirming deletion."
+                $ref: "#/components/schemas/SuccessResponseWithMessage"
 
-  /api/tuner_runs/{tuner_run_id}/status:
+  /tuner_runs/{job_id}/status:
     get:
       summary: Retrieve the status of a tuning run.
-      description: "Fetches the current status of a tuning run."
+      security:
+        - basicAuth: []
       parameters:
-        - name: tuner_run_id
+        - name: job_id
           in: path
           required: true
           schema:
             type: string
-          description: "Unique identifier of the tuning run."
+          description: Unique identifier of the tuning run.
       responses:
         "200":
-          description: "Current status of the tuning run."
+          description: Current status of the tuning run.
           content:
             application/json:
               schema:
+                $ref: "#/components/schemas/SuccessResponseWithStatus"
+
+  /replica_exchange:
+    post:
+      summary: Submit a replica exchange job via ZIP.
+      description: Accepts a `.zip` archive containing replica directories with `md.tpr` files.
+      security:
+        - basicAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: ZIP archive with replica directories.
+                additional_args:
+                  type: string
+                  description: Additional arguments to pass to GROMACS.
+      responses:
+        "200":
+          description: Replica exchange job started.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponseWithReplica"
+
+  /custom_run:
+    post:
+      summary: Submit a ZIP job with custom args.
+      security:
+        - basicAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: A `.zip` file with a `md.tpr` file and optionally other files.
+                extra_args:
+                  type: string
+                  example: "-deffnm md -plumed plumed.dat"
+      responses:
+        "200":
+          description: Custom tuning job started.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponseWithRunID"
+
+  /completed_jobs:
+    get:
+      summary: List all completed jobs.
+      security:
+        - basicAuth: []
+      responses:
+        "200":
+          description: Completed jobs listed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponseWithCompleted"
+
+  /health:
+    get:
+      summary: Health check.
+      responses:
+        "200":
+          description: API is healthy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponseWithMessage"
+
+components:
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+
+  schemas:
+    SuccessResponseWithRunID:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            job_id:
+              type: string
+            status:
+              type: string
+        message:
+          type: string
+        error:
+          type: object
+          nullable: true
+
+    SuccessResponseWithStatus:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            job_id:
+              type: string
+            summary:
+              type: object
+              properties:
+                RUNNING:
+                  type: integer
+                PENDING:
+                  type: integer
+                TERMINATED:
+                  type: integer
+                ERROR:
+                  type: integer
+            trials:
+              type: array
+              items:
                 type: object
                 properties:
-                  tuner_run_id:
+                  id:
                     type: string
-                    description: "Identifier of the tuning run."
                   status:
                     type: string
-                    description: "Current status of the tuning process."
+                  np:
+                    type: integer
+                  ntomp:
+                    type: integer
+                  nb:
+                    type: string
+                  pme:
+                    type: string
+                  performance:
+                    type: number
+                    nullable: true
+            cluster_resources:
+              type: string
+        message:
+          type: string
+        error:
+          type: object
+          nullable: true
+
+    SuccessResponseWithMessage:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            status:
+              type: string
+        message:
+          type: string
+        error:
+          type: object
+          nullable: true
+
+    SuccessResponseWithActive:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            active_jobs:
+              type: array
+              items:
+                type: string
+        message:
+          type: string
+        error:
+          type: object
+          nullable: true
+
+    SuccessResponseWithCompleted:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            completed_jobs:
+              type: array
+              items:
+                type: string
+        message:
+          type: string
+        error:
+          type: object
+          nullable: true
+
+    SuccessResponseWithReplica:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            job_id:
+              type: string
+            status:
+              type: string
+            replica_count:
+              type: integer
+        message:
+          type: string
+        error:
+          type: object
+          nullable: true

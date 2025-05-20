@@ -26,6 +26,18 @@ spec:
         env:
           - name: RAY_ADDRESS
             value: "ray://raycluster-complete-head-svc:10001"
+          - name: TUNER_DB
+            value: "/data/tuner.db"
+          - name: TUNER_USER
+            valueFrom:
+              secretKeyRef:
+                name: tuner-auth
+                key: user
+          - name: TUNER_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: tuner-auth
+                key: password
         ports:
         - containerPort: 8000
         resources:
@@ -44,6 +56,8 @@ spec:
         volumeMounts:
         - name: gromacs-pvc
           mountPath: /tmp/tpr
+        - name: gromacs-pvc
+          mountPath: /data
       volumes:
       - name: gromacs-pvc
         persistentVolumeClaim:
