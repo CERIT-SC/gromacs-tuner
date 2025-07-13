@@ -1,11 +1,54 @@
-# Minimal configuration values
-namespace: gromacs-tuner-ns
 image:
   repository: cerit.io/adamondrejka/gromacs-tuner-api
   tag: "1.2"
+
 ingress:
   host: "gromacs-tuner.dyn.cloud.e-infra.cz"
   tlsSecretName: "gromacs-tuner-dyn-cloud-e-infra-cz-tls"
+
 auth:
   user: "admin"
   password: "strong-secret-here"
+
+# API resources
+api:
+  resources:
+    limits:
+      cpu: "1"
+      memory: "2Gi"
+    requests:
+      cpu: "0.5"
+      memory: "1Gi"
+
+# Storage configuration
+storage:
+  size: "2Gi"
+  storageClassName: "nfs-csi"
+
+# Ray cluster configuration
+ray:
+  version: "2.42.1"
+  image: "cerit.io/adamondrejka/gmx-cuda-ray-2-42-1-with-user"
+
+  head:
+    resources:
+      limits:
+        cpu: "1"
+        memory: "8Gi"
+      requests:
+        cpu: "0.5"
+        memory: "4Gi"
+
+  worker:
+    replicas: 1
+    nodeSelector:
+      nvidia.com/gpu.product: "NVIDIA-A40"
+    resources:
+      limits:
+        cpu: "32"
+        memory: "128Gi"
+        nvidia.com/gpu: "1"
+      requests:
+        cpu: "32"
+        memory: "16Gi"
+        nvidia.com/gpu: "1"

@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: gromacs-tuner-api
-  namespace: {{ .Values.namespace }}
+  namespace: {{ .Release.Namespace }}
 spec:
   replicas: 1
   selector:
@@ -42,11 +42,11 @@ spec:
         - containerPort: 8000
         resources:
           limits:
-            cpu: "1"
-            memory: "2Gi"
+            cpu: {{ .Values.api.resources.limits.cpu }}
+            memory: {{ .Values.api.resources.limits.memory }}
           requests:
-            cpu: "0.5"
-            memory: "1Gi"
+            cpu: {{ .Values.api.resources.requests.cpu }}
+            memory: {{ .Values.api.resources.requests.memory }}
         securityContext:
           runAsUser: 1000
           capabilities:

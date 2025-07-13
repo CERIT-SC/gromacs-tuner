@@ -4,9 +4,9 @@ metadata:
   labels:
     controller-tools.k8s.io: "1.0"
   name: raycluster-complete
-  namespace: {{ .Values.namespace }}
+  namespace: {{ .Release.Namespace }}
 spec:
-  rayVersion: '2.42.1'
+  rayVersion: {{ .Values.ray.version }}
 
   headGroupSpec:
     serviceType: ClusterIP
@@ -26,7 +26,7 @@ spec:
 
         containers:
         - name: ray-head
-          image: cerit.io/adamondrejka/gmx-cuda-ray-2-42-1-with-user
+          image: {{ .Values.ray.image }}
 
           ports:
             - { containerPort: 6379, name: gcs }
@@ -44,8 +44,8 @@ spec:
             - { mountPath: /data,    name: gromacs-pvc }
 
           resources:
-            limits:   { cpu: "1",   memory: "8Gi" }
-            requests: { cpu: "0.5", memory: "4Gi" }
+            limits:   { cpu: {{ .Values.ray.head.resources.limits.cpu }}, memory: {{ .Values.ray.head.resources.limits.memory }} }
+            requests: { cpu: {{ .Values.ray.head.resources.requests.cpu }}, memory: {{ .Values.ray.head.resources.requests.memory }} }
 
           securityContext:
             runAsUser: 1000
@@ -60,9 +60,9 @@ spec:
           - { name: gromacs-pvc, persistentVolumeClaim: { claimName: gromacs-pvc } }
 
   workerGroupSpecs:
-  - replicas: 1
-    minReplicas: 1
-    maxReplicas: 1
+  - replicas: {{ .Values.ray.worker.replicas }}
+    minReplicas: {{ .Values.ray.worker.replicas }}
+    maxReplicas: {{ .Values.ray.worker.replicas }}
     groupName: gromacs-group
     rayStartParams:
       num-cpus: '32'
@@ -71,7 +71,7 @@ spec:
     template:
       spec:
         nodeSelector:
-          nvidia.com/gpu.product: 'NVIDIA-A40'
+          nvidia.com/gpu.product: {{ index .Values.ray.worker.nodeSelector "nvidia.com/gpu.product" }}
 
         securityContext:
           fsGroup: 1000                     # pod‑level
@@ -82,7 +82,7 @@ spec:
 
         containers:
         - name: ray-worker
-          image: cerit.io/adamondrejka/gmx-cuda-ray-2-42-1-with-user
+          image: {{ .Values.ray.image }}
 
           lifecycle:
             preStop:
@@ -96,13 +96,13 @@ spec:
 
           resources:
             limits:
-              cpu: "32"
-              memory: "128Gi"
-              nvidia.com/gpu: "1"
+              cpu: {{ .Values.ray.worker.resources.limits.cpu }}
+              memory: {{ .Values.ray.worker.resources.limits.memory }}
+              nvidia.com/gpu: {{ index .Values.ray.worker.resources.limits "nvidia.com/gpu" }}
             requests:
-              cpu: "32"
-              memory: "16Gi"
-              nvidia.com/gpu: "1"
+              cpu: {{ .Values.ray.worker.resources.requests.cpu }}
+              memory: {{ .Values.ray.worker.resources.requests.memory }}
+              nvidia.com/gpu: {{ index .Values.ray.worker.resources.requests "nvidia.com/gpu" }}
 
           securityContext:
             runAsUser: 1000

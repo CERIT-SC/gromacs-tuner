@@ -3,4 +3,4 @@ name: gromacs-tuner
 description: Helm chart for deploying GROMACS Tuner API and Ray cluster
 type: application
 version: 0.1.0
-appVersion: "1.1"
+appVersion: "1.2"
