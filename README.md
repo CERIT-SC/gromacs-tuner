@@ -5,39 +5,34 @@ This project deploys a tuning API for GROMACS using Ray Tune on Kubernetes.
 ## Prerequisites
 
 -   [Helm](https://helm.sh/) and [kubectl](https://kubernetes.io/docs/tasks/tools/) must be installed and configured to interact with your Kubernetes cluster.
--   Ensure your target namespace has sufficient resources: a minimum of 32 CPU requests and a GPU request (see src/helm/charts/gromacs-tuner/templates/raycluster.yaml).
+-   Ray operator must be installed in your cluster to provide the RayCluster CRDs.
+-   Ensure your target namespace has sufficient resources: a minimum of 32 CPU requests and a GPU request (see helm/charts/gromacs-tuner/templates/raycluster.yaml).
 -   [jq](https://stedolan.github.io/jq/) must be installed for processing JSON data.
 -   Update the API Docker image details in `values.yaml` (refer to `api/Dockerfile`) with your Harbor image information, including the correct image name and tag.
 
 ## Deployment Steps
 
-1.  **Configure `values.yaml`:**
-
-    -   Set the `namespace` where the application will be deployed.
-    -   Specify the `ingress.host` for accessing the API and the `ingress.tls.secretName` for TLS configuration.
-    -   Provide the complete Docker `image.repository` and `image.tag` for the API.
-    - Create the Kubernetes Secret for API authentication:
-
-      ```bash
-      kubectl create secret generic tuner-auth \
-        --from-literal=user=admin \
-        --from-literal=password='strong-secret-here' \
-        --namespace <your_namespace>
-      ```
-
-      Replace `'strong-secret-here'` with a secure password. This secret is required for HTTP Basic Auth on all tuning API endpoints.
-
-2.  **Deploy the Chart:**
-
-    Run the following Helm command to deploy the chart:
+1.  **Install Ray Operator:**
 
     ```bash
-    helm install gromacs-tuner helm/charts/gromacs-tuner --namespace <your_namespace>
+    helm repo add kuberay https://ray-project.github.io/kuberay-helm/
+    helm install kuberay-operator kuberay/kuberay-operator --version 1.0.0
     ```
 
-    Replace `<your_namespace>` with the actual namespace you configured.
+2.  **Configure `values.yaml`:**
 
-3.  **Verify the Deployment:**
+    -   Specify the `ingress.host` for accessing the API and the `ingress.tlsSecretName` for TLS configuration.
+    -   Provide the complete Docker `image.repository` and `image.tag` for the API.
+
+3.  **Deploy the Chart:**
+
+    ```bash
+    helm install gromacs-tuner helm/charts/gromacs-tuner --namespace <your_namespace> --create-namespace
+    ```
+
+    Replace `<your_namespace>` with your target namespace.
+
+4.  **Verify the Deployment:**
 
     Check if the pods are running correctly:
 
