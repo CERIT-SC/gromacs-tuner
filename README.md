@@ -12,39 +12,40 @@ This project deploys a tuning API for GROMACS using Ray Tune on Kubernetes.
 
 ## Deployment Steps
 
-1.  **Install Ray Operator:**
-
-    ```bash
-    helm repo add kuberay https://ray-project.github.io/kuberay-helm/
-    helm install kuberay-operator kuberay/kuberay-operator --version 1.0.0
-    ```
-
-2.  **Configure `values.yaml`:**
+1.  **Configure `values.yaml`:**
 
     -   Specify the `ingress.host` for accessing the API and the `ingress.tlsSecretName` for TLS configuration.
     -   Provide the complete Docker `image.repository` and `image.tag` for the API.
 
-3.  **Deploy the Chart:**
+2.  **Deploy:**
 
     ```bash
-    helm install gromacs-tuner helm/charts/gromacs-tuner --namespace <your_namespace> --create-namespace
+    cd helm/
+    make install
     ```
 
-    Replace `<your_namespace>` with your target namespace.
-
-4.  **Verify the Deployment:**
+3.  **Verify the Deployment:**
 
     Check if the pods are running correctly:
 
     ```bash
-    kubectl get pods -n <your_namespace>
+    kubectl get pods -n gromacs-tuner
     ```
 
     Verify that the Ray cluster is properly deployed:
 
     ```bash
-    kubectl get rayclusters -n <your_namespace>
+    kubectl get rayclusters -n gromacs-tuner
     ```
+
+## Uninstalling
+
+To remove everything:
+
+```bash
+cd helm/
+make uninstall
+```
 
 ## Basic Workflow
 
