@@ -44,8 +44,12 @@ spec:
             - { mountPath: /data,    name: gromacs-pvc }
 
           resources:
-            limits:   { cpu: {{ .Values.ray.head.resources.limits.cpu }}, memory: {{ .Values.ray.head.resources.limits.memory }} }
-            requests: { cpu: {{ .Values.ray.head.resources.requests.cpu }}, memory: {{ .Values.ray.head.resources.requests.memory }} }
+            limits:
+              cpu: {{ .Values.ray.head.resources.limits.cpu }}
+              memory: {{ .Values.ray.head.resources.limits.memory }}
+            requests:
+              cpu: {{ .Values.ray.head.resources.requests.cpu }}
+              memory: {{ .Values.ray.head.resources.requests.memory }}
 
           securityContext:
             runAsUser: 1000

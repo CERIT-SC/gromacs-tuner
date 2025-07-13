@@ -3,6 +3,7 @@ image:
   tag: "1.2"
 
 ingress:
+  enabled: true
   host: "gromacs-tuner.dyn.cloud.e-infra.cz"
   tlsSecretName: "gromacs-tuner-dyn-cloud-e-infra-cz-tls"
 
@@ -36,7 +37,7 @@ ray:
         cpu: "1"
         memory: "8Gi"
       requests:
-        cpu: "0.5"
+        cpu: "500m"
         memory: "4Gi"
 
   worker:
