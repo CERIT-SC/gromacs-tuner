@@ -1,6 +1,6 @@
 CHART_NAME := gromacs-tuner
 NAMESPACE := gromacs-tuner
-REGISTRY ?=
+REGISTRY ?= # example: cerit.io/xkrasa
 
 install:
 	helm repo add kuberay https://ray-project.github.io/kuberay-helm/
