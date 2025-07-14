@@ -1,6 +1,7 @@
 image:
   repository: cerit.io/adamondrejka/gromacs-tuner-api
   tag: "1.2"
+  pullPolicy: Always
 
 ingress:
   enabled: true
