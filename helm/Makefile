@@ -1,15 +1,15 @@
 CHART_NAME := gromacs-tuner
-NAMESPACE := gromacs-tuner
+NAMESPACE := gromacs-tuner-ns
 REGISTRY ?= # example: cerit.io/xkrasa
 
 install:
-	helm repo add kuberay https://ray-project.github.io/kuberay-helm/
-	helm install kuberay-operator kuberay/kuberay-operator
+	helm repo add kuberay https://ray-project.github.io/kuberay-helm/ || true
+	helm install kuberay-operator kuberay/kuberay-operator || true
 	helm install $(CHART_NAME) charts/$(CHART_NAME) --namespace $(NAMESPACE) --create-namespace
 
 uninstall:
-	helm uninstall $(CHART_NAME) --namespace $(NAMESPACE)
-	helm uninstall kuberay-operator
+	helm uninstall $(CHART_NAME) --namespace $(NAMESPACE) || true
+	helm uninstall kuberay-operator || true
 
 upgrade:
 	helm upgrade $(CHART_NAME) charts/$(CHART_NAME) --namespace $(NAMESPACE)

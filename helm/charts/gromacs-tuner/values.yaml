@@ -4,7 +4,7 @@ image:
   pullPolicy: Always
 
 ingress:
-  enabled: true
+  enabled: false
   host: "gromacs-tuner.dyn.cloud.e-infra.cz"
   tlsSecretName: "gromacs-tuner-dyn-cloud-e-infra-cz-tls"
 
