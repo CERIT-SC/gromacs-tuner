@@ -2,7 +2,7 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ .Release.Name }}-tuner-api-ingress
+  name: gromacs-tuner-api-ingress
   namespace: {{ .Release.Namespace }}
   annotations:
     kubernetes.io/tls-acme: "true"
@@ -22,7 +22,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: {{ .Release.Name }}-tuner-api-svc
+                name: gromacs-tuner-api-svc
                 port:
                   number: 8000
 {{- end }}

@@ -1,17 +1,17 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Release.Name }}-tuner-api
+  name: gromacs-tuner-api
   namespace: {{ .Release.Namespace }}
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: {{ .Release.Name }}-tuner-api
+      app: gromacs-tuner-api
   template:
     metadata:
       labels:
-        app: {{ .Release.Name }}-tuner-api
+        app: gromacs-tuner-api
     spec:
       securityContext:
         fsGroupChangePolicy: OnRootMismatch
@@ -25,7 +25,7 @@ spec:
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         env:
           - name: RAY_ADDRESS
-            value: "ray://{{ .Release.Name }}-raycluster-head-svc:10001"
+            value: "ray://gromacs-tuner-raycluster-head-svc:10001"
           - name: TUNER_DB
             value: "/data/tuner.db"
           - name: TUNER_USER
@@ -61,4 +61,4 @@ spec:
       volumes:
       - name: gromacs-pvc
         persistentVolumeClaim:
-            claimName: {{ .Release.Name }}-tuner-pvc
+            claimName: gromacs-tuner-pvc

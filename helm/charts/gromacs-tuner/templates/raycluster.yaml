@@ -3,7 +3,7 @@ kind: RayCluster
 metadata:
   labels:
     controller-tools.k8s.io: "1.0"
-  name: {{ .Release.Name }}-raycluster
+  name: gromacs-tuner-raycluster
   namespace: {{ .Release.Namespace }}
 spec:
   rayVersion: {{ .Values.ray.version }}
@@ -40,7 +40,7 @@ spec:
 
           volumeMounts:
             - { mountPath: /tmp/ray, name: ray-logs }
-            - { mountPath: /data,    name: {{ .Release.Name }}-pvc }
+            - { mountPath: /data,    name: gromacs-tuner-pvc }
 
           resources:
             limits:
@@ -60,7 +60,7 @@ spec:
 
         volumes:
           - { name: ray-logs, emptyDir: {} }
-          - { name: gromacs-pvc, persistentVolumeClaim: { claimName: gromacs-pvc } }
+          - { name: gromacs-tuner-pvc, persistentVolumeClaim: { claimName: gromacs-tuner-pvc } }
 
   workerGroupSpecs:
   - replicas: {{ .Values.ray.worker.replicas }}
@@ -77,7 +77,7 @@ spec:
           {{- toYaml .Values.ray.worker.nodeSelector | nindent 10 }}
 
         securityContext:
-          fsGroup: 1000                     # pod‑level
+          fsGroup: 1000  # pod‑level
           fsGroupChangePolicy: OnRootMismatch
           runAsNonRoot: true
           seccompProfile:
@@ -93,9 +93,9 @@ spec:
 
           volumeMounts:
             - { mountPath: /tmp/ray,         name: ray-logs }
-            - { mountPath: /tmp/tpr,         name: gromacs-pvc }
+            - { mountPath: /tmp/tpr,         name: gromacs-tuner-pvc }
             - { mountPath: /tmp/ray_gmx_logs, name: gromacs-logs }
-            - { mountPath: /data,            name: gromacs-pvc }  # ← new
+            - { mountPath: /data,            name: gromacs-tuner-pvc }
 
           resources:
             {{- toYaml .Values.ray.worker.resources | nindent 12 }}
@@ -111,4 +111,4 @@ spec:
         volumes:
           - { name: ray-logs,      emptyDir: {} }
           - { name: gromacs-logs, emptyDir: {} }
-          - { name: gromacs-pvc,  persistentVolumeClaim: { claimName: gromacs-pvc } }
+          - { name: gromacs-tuner-pvc,  persistentVolumeClaim: { claimName: gromacs-tuner-pvc } }
