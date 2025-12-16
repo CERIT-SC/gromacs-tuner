@@ -17,14 +17,26 @@ This project deploys a tuning API for GROMACS using Ray Tune on Kubernetes.
     -   Specify the `ingress.host` for accessing the API and the `ingress.tlsSecretName` for TLS configuration.
     -   Provide the complete Docker `image.repository` and `image.tag` for the API.
 
-2.  **Deploy:**
+2.  **Create Authentication Secret:**
+
+    Create a Kubernetes secret named `tuner-auth` in your target namespace containing the `user` and `password` for API authentication.
+
+    ```bash
+    # Replace <namespace> with your target namespace (e.g., gromacs-tuner-ns)
+    kubectl create secret generic tuner-auth \
+      --namespace <namespace> \
+      --from-literal=user=admin \
+      --from-literal=password=your-strong-password
+    ```
+
+3.  **Deploy:**
 
     ```bash
     cd helm/
     make install
     ```
 
-3.  **Verify the Deployment:**
+4.  **Verify the Deployment:**
 
     Check if the pods are running correctly:
 
