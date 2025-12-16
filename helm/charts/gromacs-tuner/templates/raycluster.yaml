@@ -3,7 +3,7 @@ kind: RayCluster
 metadata:
   labels:
     controller-tools.k8s.io: "1.0"
-  name: raycluster-complete
+  name: {{ .Release.Name }}-raycluster
   namespace: {{ .Release.Namespace }}
 spec:
   rayVersion: {{ .Values.ray.version }}
@@ -40,8 +40,7 @@ spec:
 
           volumeMounts:
             - { mountPath: /tmp/ray, name: ray-logs }
-            - { mountPath: /tmp/tpr, name: gromacs-pvc }
-            - { mountPath: /data,    name: gromacs-pvc }
+            - { mountPath: /data,    name: {{ .Release.Name }}-pvc }
 
           resources:
             limits:
@@ -75,7 +74,7 @@ spec:
     template:
       spec:
         nodeSelector:
-          nvidia.com/gpu.product: {{ index .Values.ray.worker.nodeSelector "nvidia.com/gpu.product" }}
+          {{- toYaml .Values.ray.worker.nodeSelector | nindent 10 }}
 
         securityContext:
           fsGroup: 1000                     # pod‑level
@@ -99,14 +98,7 @@ spec:
             - { mountPath: /data,            name: gromacs-pvc }  # ← new
 
           resources:
-            limits:
-              cpu: {{ .Values.ray.worker.resources.limits.cpu }}
-              memory: {{ .Values.ray.worker.resources.limits.memory }}
-              nvidia.com/gpu: {{ index .Values.ray.worker.resources.limits "nvidia.com/gpu" }}
-            requests:
-              cpu: {{ .Values.ray.worker.resources.requests.cpu }}
-              memory: {{ .Values.ray.worker.resources.requests.memory }}
-              nvidia.com/gpu: {{ index .Values.ray.worker.resources.requests "nvidia.com/gpu" }}
+            {{- toYaml .Values.ray.worker.resources | nindent 12 }}
 
           securityContext:
             runAsUser: 1000

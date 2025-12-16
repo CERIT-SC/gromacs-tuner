@@ -1,5 +1,5 @@
 CHART_NAME := gromacs-tuner
-NAMESPACE := gromacs-tuner-ns
+NAMESPACE ?= gromacs-tuner-ns
 REGISTRY ?= # example: cerit.io/xkrasa
 
 install:

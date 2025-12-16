@@ -1,7 +1,7 @@
 kind: PersistentVolumeClaim
 apiVersion: v1
 metadata:
-  name: gromacs-pvc
+  name: {{ .Release.Name }}-pvc
   namespace: {{ .Release.Namespace }}
 spec:
   accessModes:
