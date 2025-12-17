@@ -24,8 +24,11 @@ def main() -> None:
         ray.init(address=ray_address, log_to_driver=True, runtime_env={"working_dir": "/app"})
         logger.info("Successfully connected to Ray cluster")
         uvicorn.run(app, host="0.0.0.0", port=8000)
-    except ConnectionError:
-        logger.exception("Failed to connect to Ray cluster")
+    except (ConnectionError, ValueError, RuntimeError):
+        logger.exception("Failed to initialize Ray or start server.")
+        sys.exit(1)
+    except Exception:
+        logger.exception("Unexpected error while starting.")
         sys.exit(1)
     finally:
         ray.shutdown()

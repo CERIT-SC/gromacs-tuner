@@ -250,6 +250,10 @@ class TuneStatusActor:
         """Get list of all registered job IDs."""
         return list(self.status_by_job.keys())
 
+    def delete_job(self, job_id: str) -> bool:
+        """Remove a job from the in-memory status store."""
+        return self.status_by_job.pop(job_id, None) is not None
+
 
 class StatusCallback(Callback):
     """Ray Tune callback to update status actor and persist trials."""
@@ -304,7 +308,7 @@ class StatusCallback(Callback):
 def valid_config(config: dict[str, Any]) -> bool:
     """Validate GROMACS config constraints."""
     cfg = config.get("pme_choice", config)
-    if cfg.get("np", 1) * cfg.get("ntomp", 1) > 32:
+    if cfg.get("np", 1) * cfg.get("ntomp", 1) > REPLICA_EXCHANGE_CPU:
         return False
     if cfg.get("nb") == "cpu" and cfg.get("pme") == "gpu":
         return False
@@ -342,7 +346,7 @@ def gromacs_trial(config: dict[str, Any]) -> None:
     if exec_cfg["pme"] == "cpu" and exec_cfg["np"] > 1:
         cmd += ["-npme", "1"]
 
-    if "extra_args" in config and config["extra_args"]:
+    if config.get("extra_args"):
         cmd += shlex.split(config["extra_args"])
 
     stdout_log = trial_dir / "stdout.log"
@@ -497,7 +501,11 @@ def run_replica_exchange_remote(
         stderr_log = trial_dir / "stderr.log"
 
         with stdout_log.open("w") as o, stderr_log.open("w") as e:
-            subprocess.run(cmd, stdout=o, stderr=e, text=True, cwd=base_dir, check=False)
+            result = subprocess.run(cmd, stdout=o, stderr=e, text=True, cwd=base_dir, check=False)
+            if result.returncode != 0:
+                logger.error("Replica-exchange mpirun failed with code %d", result.returncode)
+                session.report({"performance": 0.0, "ntomp": ntomp})
+                return
 
         perf_values = []
         for log_path in base_dir.glob("rep_*/md.log"):

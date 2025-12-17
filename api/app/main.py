@@ -91,6 +91,25 @@ def _extract_zip(zip_path: Path, extract_to: Path) -> None:
         zip_ref.extractall(extract_to)
 
 
+def _delete_job_from_db(job_id: str) -> int:
+    """Delete all DB trial records for a given job_id."""
+    db_path = Path(os.environ.get("TUNER_DB", "/data/tuner.db"))
+    if not db_path.exists():
+        return 0
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM trials WHERE job_id = ?", (job_id,))
+        deleted = cursor.rowcount if cursor.rowcount is not None else 0
+        conn.commit()
+        conn.close()
+        return deleted
+    except sqlite3.Error:
+        logger.exception("Failed to delete job %s from SQLite", job_id)
+        return 0
+
+
 @app.post("/api/tuner_runs")
 async def create_tuner_run(
     _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)],
@@ -216,10 +235,27 @@ async def delete_tuner_run(
     _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)],
 ) -> APIResponse:
     """Delete a tuning run by job ID."""
+    deleted_db_rows = _delete_job_from_db(job_id)
+
+    deleted_actor_state = False
+    try:
+        actor = get_status_actor()
+        deleted_actor_state = bool(ray.get(actor.delete_job.remote(job_id)))
+    except Exception:
+        logger.exception("Failed to delete job %s from status actor", job_id)
+
     cleanup_tmp_files(job_id)
+
+    if deleted_db_rows == 0 and not deleted_actor_state:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+
     return APIResponse(
         success=True,
-        data={"status": f"Tuning run {job_id} deleted"},
+        data={
+            "tuner_run_id": job_id,
+            "deleted_db_rows": deleted_db_rows,
+            "deleted_actor_state": deleted_actor_state,
+        },
         message="Tuning job deleted",
     )
 
@@ -240,12 +276,6 @@ async def list_tuner_runs(
 ) -> APIResponse:
     """List all active tuning runs."""
     actor = get_status_actor()
-    # We can get all jobs from the actor's status_by_job keys
-    # Since get_status returns None if not found, we might need a new method on actor
-    # or just rely on completed_jobs endpoint for history.
-    # But for now, let's try to get keys from actor if possible, or just return empty if we can't.
-    # Actually, the actor has all jobs (running and completed).
-    # Let's add a method to actor to get all job IDs.
     job_ids = cast("list[str]", ray.get(actor.get_all_job_ids.remote()))
     return APIResponse(
         success=True,

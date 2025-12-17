@@ -16,9 +16,10 @@ def cleanup_tmp_files(job_id: str, directory: Path = DEFAULT_TPR_DIR) -> None:
         try:
             if path.is_dir():
                 shutil.rmtree(path)
+                logger.info("Deleted directory: %s", path)
             else:
                 path.unlink()
-            logger.info("Deleted: %s", path)
+                logger.info("Deleted file: %s", path)
         except OSError:
             logger.exception("Failed to delete %s", path)
 
