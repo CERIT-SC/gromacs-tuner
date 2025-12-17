@@ -133,7 +133,6 @@ class DedupSearcher(Searcher):
     def suggest(self, trial_id: str) -> dict[str, Any] | None:
         """Suggest next config, skipping duplicates already seen or in DB."""
         max_attempts = 50
-        duplicate_count = 0
 
         for _ in range(max_attempts):
             suggestion = self.base.suggest(trial_id)
@@ -145,9 +144,6 @@ class DedupSearcher(Searcher):
             key = self._flatten_config(config)
 
             if key in self.seen_configs or _config_already_run(self.tpr_hash, config):
-                duplicate_count += 1
-                if duplicate_count <= 10:
-                    logger.info("DedupSearcher: Skipping duplicate config: %s", config)
                 continue
 
             self.seen_configs.add(key)

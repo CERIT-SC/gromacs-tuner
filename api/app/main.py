@@ -247,7 +247,12 @@ async def delete_tuner_run(
     cleanup_tmp_files(job_id)
 
     if deleted_db_rows == 0 and not deleted_actor_state:
-        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+        return APIResponse(
+            success=False,
+            data={},
+            message=f"Job '{job_id}' not found",
+            error={"job_id": "not found"},
+        )
 
     return APIResponse(
         success=True,
