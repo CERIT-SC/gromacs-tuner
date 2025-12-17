@@ -1,0 +1,44 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv
+venv/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Testing
+tests/
+test_*.py
+*_test.py
+conftest.py
+.coverage
+htmlcov/
+
+# Documentation
+*.md
+docs/
+
+# Build artifacts
+dist/
+build/
+*.egg
+
+# OS
+.DS_Store
+Thumbs.db

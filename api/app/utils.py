@@ -1,52 +1,48 @@
 import hashlib
-import os
-import glob
 import logging
+import shutil
+from pathlib import Path
+
+import ray
 
 logger = logging.getLogger("gromacs-tuner.utils")
 
-def cleanup_tmp_files(job_id: str, directory: str = "/tmp/tpr"):
-    for f in glob.glob(f"{directory}/{job_id}*"):
-        try:
-            os.remove(f)
-            logger.info(f"Deleted file: {f}")
-        except Exception as e:
-            logger.warning(f"Failed to delete file {f}: {e}")
+DEFAULT_TPR_DIR = Path("/tmp/tpr")
 
-def find_valid_replica_dirs(base_path: str) -> list[str]:
-    valid_dirs = []
-    for entry in os.listdir(base_path):
-        full_path = os.path.join(base_path, entry)
-        if os.path.isdir(full_path):
-            if any(f.endswith(".tpr") for f in os.listdir(full_path)):
-                valid_dirs.append(entry)
+
+def cleanup_tmp_files(job_id: str, directory: Path = DEFAULT_TPR_DIR) -> None:
+    """Remove temporary files associated with a job ID."""
+    for path in directory.glob(f"{job_id}*"):
+        try:
+            if path.is_dir():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+            logger.info("Deleted: %s", path)
+        except OSError:
+            logger.exception("Failed to delete %s", path)
+
+
+def find_valid_replica_dirs(base_path: Path | str) -> list[str]:
+    """Find subdirectories containing .tpr files."""
+    base = Path(base_path)
+    valid_dirs = [entry.name for entry in base.iterdir() if entry.is_dir() and any(entry.glob("*.tpr"))]
     return sorted(valid_dirs)
 
-def get_cluster_resource_summary() -> str:
-    import ray
-    cluster = ray.cluster_resources()
-    available = ray.available_resources()
-    used_cpu = int(cluster.get("CPU", 0) - available.get("CPU", 0))
-    total_cpu = int(cluster.get("CPU", 0))
-    used_gpu = int(cluster.get("GPU", 0) - available.get("GPU", 0))
-    total_gpu = int(cluster.get("GPU", 0))
-    return f"{used_cpu}/{total_cpu} CPUs, {used_gpu}/{total_gpu} GPUs used"
+
+def sha256_of_file(path: Path | str) -> str:
+    """Calculate SHA256 hash of a file."""
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def sha256_of_file(path):
-    with open(path, "rb") as f:
-        return hashlib.sha256(f.read()).hexdigest()
-
-
-def get_cluster_status():
-    import ray
-    logger.info("Getting cluster status")
+def get_cluster_status() -> str:
+    """Get current Ray cluster resource usage."""
     try:
-        avail = ray.available_resources()
         total = ray.cluster_resources()
-        used_cpu = total.get("CPU", 0) - avail.get("CPU", 0)
-        used_gpu = total.get("GPU", 0) - avail.get("GPU", 0)
-        return f"{used_cpu}/{total.get('CPU',0)} CPUs, {used_gpu}/{total.get('GPU',0)} GPUs used"
-    except Exception as e:
-        logger.error(f"Error getting cluster status: {e}")
+        avail = ray.available_resources()
+        used_cpu = int(total.get("CPU", 0) - avail.get("CPU", 0))
+        used_gpu = int(total.get("GPU", 0) - avail.get("GPU", 0))
+        return f"{used_cpu}/{int(total.get('CPU', 0))} CPUs, {used_gpu}/{int(total.get('GPU', 0))} GPUs used"
+    except ray.exceptions.RaySystemError:
+        logger.exception("Ray cluster error")
         return "N/A"
