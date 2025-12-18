@@ -2,6 +2,7 @@ import hashlib
 import logging
 import shutil
 from pathlib import Path
+from typing import List, Union
 
 import ray
 
@@ -24,14 +25,14 @@ def cleanup_tmp_files(job_id: str, directory: Path = DEFAULT_TPR_DIR) -> None:
             logger.exception("Failed to delete %s", path)
 
 
-def find_valid_replica_dirs(base_path: Path | str) -> list[str]:
+def find_valid_replica_dirs(base_path: Union[Path, str]) -> List[str]:
     """Find subdirectories containing .tpr files."""
     base = Path(base_path)
     valid_dirs = [entry.name for entry in base.iterdir() if entry.is_dir() and any(entry.glob("*.tpr"))]
     return sorted(valid_dirs)
 
 
-def sha256_of_file(path: Path | str) -> str:
+def sha256_of_file(path: Union[Path, str]) -> str:
     """Calculate SHA256 hash of a file."""
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 

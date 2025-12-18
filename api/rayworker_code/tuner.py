@@ -9,7 +9,7 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
 
 import ray
 from app.utils import get_cluster_status, sha256_of_file
@@ -59,7 +59,9 @@ def _init_db() -> None:
         conn.close()
 
 
-def _persist_trial(job_id: str, trial_id: str, status: str, config: dict[str, Any], performance: float | None) -> None:
+def _persist_trial(
+    job_id: str, trial_id: str, status: str, config: Dict[str, Any], performance: Optional[float]
+) -> None:
     """Append a single trial record to the SQLite DB."""
     try:
         with sqlite_lock:
@@ -82,14 +84,14 @@ def _persist_trial(job_id: str, trial_id: str, status: str, config: dict[str, An
         logger.warning("SQLite persistence failed for trial %s", trial_id, exc_info=True)
 
 
-def _restore_jobs_from_db() -> dict[str, dict[str, Any]]:
+def _restore_jobs_from_db() -> Dict[str, Dict[str, Any]]:
     """Return {job_id: {trial_id: {...}}} reconstructed from SQLite."""
     if not DB_PATH.exists():
         return {}
     with sqlite_lock:
         conn = sqlite3.connect(DB_PATH)
         cur = conn.execute("SELECT job_id, trial_id, status, config, performance FROM trials")
-        jobs: dict[str, dict[str, Any]] = {}
+        jobs: Dict[str, Dict[str, Any]] = {}
         for job_id, tid, st, cfg_json, perf in cur:
             jobs.setdefault(job_id, {})[tid] = {
                 "config": json.loads(cfg_json),
@@ -100,13 +102,13 @@ def _restore_jobs_from_db() -> dict[str, dict[str, Any]]:
         return jobs
 
 
-def _normalize_config(cfg: dict[str, Any]) -> dict[str, Any]:
+def _normalize_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
     """Normalize config for comparison, excluding non-comparable keys."""
     inner = cfg.get("pme_choice", cfg)
     return dict(sorted((k, v) for k, v in inner.items() if k not in {"tpr_path", "tpr_hash", "extra_args"}))
 
 
-def _config_already_run(tpr_hash: str, config: dict[str, Any]) -> bool:
+def _config_already_run(tpr_hash: str, config: Dict[str, Any]) -> bool:
     """Check if a config with this hash was already run."""
     with sqlite_lock:
         conn = sqlite3.connect(DB_PATH)
@@ -128,9 +130,9 @@ class DedupSearcher(Searcher):
         """Initialize deduplication searcher with base searcher and TPR hash."""
         self.base = base_searcher
         self.tpr_hash = tpr_hash
-        self.seen_configs: set[tuple[tuple[str, str], ...]] = set()
+        self.seen_configs: Set[Tuple[Tuple[str, str], ...]] = set()
 
-    def suggest(self, trial_id: str) -> dict[str, Any] | None:
+    def suggest(self, trial_id: str) -> Optional[Dict[str, Any]]:
         """Suggest next config, skipping duplicates already seen or in DB."""
         max_attempts = 50
 
@@ -152,19 +154,19 @@ class DedupSearcher(Searcher):
         raise TuneError("All configurations have already been tried. Stopping search.")
 
     @staticmethod
-    def _flatten_config(cfg: dict[str, Any]) -> tuple[tuple[str, str], ...]:
+    def _flatten_config(cfg: Dict[str, Any]) -> Tuple[Tuple[str, str], ...]:
         inner = cfg.get("pme_choice", cfg)
         return tuple(sorted((k, str(v)) for k, v in inner.items() if k not in {"tpr_path", "tpr_hash", "extra_args"}))
 
-    def on_trial_complete(self, trial_id: str, result: dict[str, Any] | None = None, error: bool = False) -> None:
+    def on_trial_complete(self, trial_id: str, result: Optional[Dict[str, Any]] = None, error: bool = False) -> None:
         """Forward trial completion to base searcher."""
         self.base.on_trial_complete(trial_id, result, error)
 
     def set_search_properties(
         self,
-        metric: str | None,
-        mode: str | None,
-        config: dict[str, Any],
+        metric: Optional[str],
+        mode: Optional[str],
+        config: Dict[str, Any],
         **spec,
     ) -> bool:
         """Forward search properties to base searcher."""
@@ -192,7 +194,7 @@ class TuneStatusActor:
     def __init__(self) -> None:
         """Initialize status actor and restore jobs from database."""
         logger.info("Initializing TuneStatusActor")
-        self.status_by_job: dict[str, dict[str, Any]] = {}
+        self.status_by_job: Dict[str, Dict[str, Any]] = {}
         restored = _restore_jobs_from_db()
         for job_id, trials in restored.items():
             self.status_by_job[job_id] = {"total": len(trials), "trials": trials}
@@ -204,7 +206,7 @@ class TuneStatusActor:
         self.status_by_job[job_id] = {"total": total_trials, "trials": {}}
 
     def update_trial(
-        self, job_id: str, trial_id: str, config: dict[str, Any], status: str, performance: float | None = None
+        self, job_id: str, trial_id: str, config: Dict[str, Any], status: str, performance: Optional[float] = None
     ) -> None:
         """Update trial status and performance metrics."""
         logger.info(
@@ -218,7 +220,7 @@ class TuneStatusActor:
             "performance": performance,
         }
 
-    def get_status(self, job_id: str) -> dict[str, Any] | None:
+    def get_status(self, job_id: str) -> Optional[Dict[str, Any]]:
         """Get job status including trial details and cluster resources."""
         logger.info("Getting status for job %s", job_id)
         job = self.status_by_job.get(job_id)
@@ -242,7 +244,7 @@ class TuneStatusActor:
             "cluster_resources": get_cluster_status(),
         }
 
-    def get_all_job_ids(self) -> list[str]:
+    def get_all_job_ids(self) -> List[str]:
         """Get list of all registered job IDs."""
         return list(self.status_by_job.keys())
 
@@ -262,7 +264,7 @@ class StatusCallback(Callback):
     def on_trial_start(
         self,
         iteration: int,
-        trials: list["Trial"],
+        trials: List["Trial"],
         trial: "Trial",
         **info,
     ) -> None:
@@ -273,9 +275,9 @@ class StatusCallback(Callback):
     def on_trial_result(
         self,
         iteration: int,
-        trials: list["Trial"],
+        trials: List["Trial"],
         trial: "Trial",
-        result: dict[str, Any],
+        result: Dict[str, Any],
         **info,
     ) -> None:
         """Handle trial result by updating performance metrics."""
@@ -289,7 +291,7 @@ class StatusCallback(Callback):
     def on_trial_complete(
         self,
         iteration: int,
-        trials: list["Trial"],
+        trials: List["Trial"],
         trial: "Trial",
         **info,
     ) -> None:
@@ -301,7 +303,7 @@ class StatusCallback(Callback):
         _persist_trial(self.job_id, trial.trial_id, "TERMINATED", trial.config, perf)
 
 
-def valid_config(config: dict[str, Any]) -> bool:
+def valid_config(config: Dict[str, Any]) -> bool:
     """Validate GROMACS config constraints."""
     cfg = config.get("pme_choice", config)
     if cfg.get("np", 1) * cfg.get("ntomp", 1) > REPLICA_EXCHANGE_CPU:
@@ -311,7 +313,7 @@ def valid_config(config: dict[str, Any]) -> bool:
     return not (cfg.get("pme") == "gpu" and cfg.get("np", 1) > 1)
 
 
-def gromacs_trial(config: dict[str, Any]) -> None:
+def gromacs_trial(config: Dict[str, Any]) -> None:
     """Execute a single GROMACS trial and report performance."""
     trial_id = session.get_trial_id()
     trial_dir = RAY_GMX_LOGS / trial_id
@@ -383,7 +385,7 @@ def _create_search_algorithm(tpr_hash: str) -> ConcurrencyLimiter:
     return ConcurrencyLimiter(DedupSearcher(base_search, tpr_hash), max_concurrent=3)
 
 
-def _setup_trial_env(cfg: dict[str, Any]) -> None:
+def _setup_trial_env(cfg: Dict[str, Any]) -> None:
     """Set up environment variables for a trial."""
     env_cfg = cfg.get("pme_choice", cfg)
     os.environ["OMP_NUM_THREADS"] = str(env_cfg.get("ntomp", 1))
@@ -402,7 +404,7 @@ def run_tuning(
     search_alg = _create_search_algorithm(tpr_hash)
     ray.get(status_actor.register_job.remote(job_id, num_samples))
 
-    def trial_wrapper(cfg: dict[str, Any]) -> None:
+    def trial_wrapper(cfg: Dict[str, Any]) -> None:
         cfg["tpr_hash"] = tpr_hash
         cfg["tpr_path"] = tpr_path
         _setup_trial_env(cfg)
@@ -434,7 +436,7 @@ def run_custom_single(
     num_samples = 10
     ray.get(status_actor.register_job.remote(job_id, num_samples))
 
-    def trial_wrapper(cfg: dict[str, Any]) -> None:
+    def trial_wrapper(cfg: Dict[str, Any]) -> None:
         cfg["tpr_hash"] = tpr_hash
         cfg["tpr_path"] = tpr_path
         cfg["extra_args"] = extra_args
@@ -458,7 +460,7 @@ def run_custom_single(
 def run_replica_exchange_remote(
     job_id: str,
     base_path: str,
-    replica_dirs: list[str],
+    replica_dirs: List[str],
     status_actor: Any,
     num_samples: int = 5,
 ) -> "ResultGrid":
@@ -468,7 +470,7 @@ def run_replica_exchange_remote(
     ray.get(status_actor.register_job.remote(job_id, num_samples))
     base_dir = Path(base_path)
 
-    def trial_wrapper(cfg: dict[str, Any]) -> None:
+    def trial_wrapper(cfg: Dict[str, Any]) -> None:
         ntomp = cfg["ntomp"]
         os.environ["OMP_NUM_THREADS"] = str(ntomp)
         os.environ["CUDA_VISIBLE_DEVICES"] = "0"

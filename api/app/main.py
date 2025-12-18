@@ -6,7 +6,7 @@ import uuid
 import zipfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Annotated, Any, cast
+from typing import Annotated, Any, Dict, List, Optional, cast
 
 import ray
 import yaml
@@ -33,9 +33,9 @@ class APIResponse(BaseModel):
     """Standard API response wrapper."""
 
     success: bool
-    data: dict[str, Any] = {}
+    data: Dict[str, Any] = {}
     message: str = ""
-    error: dict[str, str] | None = None
+    error: Optional[Dict[str, str]] = None
 
 
 app = FastAPI(title="GROMACS Tuner API")
@@ -69,7 +69,7 @@ def get_status_actor() -> Any:
     """Get or create the global Ray status actor."""
     global status_actor
     if status_actor is None:
-        status_actor = TuneStatusActor.options(  # type: ignore[attr-defined]
+        status_actor = TuneStatusActor.options(
             name=f"{POD_NAMESPACE}_gromacs_tuner_status",
             get_if_exists=True,
             lifetime="detached",
@@ -176,7 +176,7 @@ async def get_status(
 ) -> APIResponse:
     """Get the status of a tuning job including trial results."""
     actor = get_status_actor()
-    result = cast("dict[str, Any] | None", ray.get(actor.get_status.remote(job_id)))
+    result = cast("Optional[Dict[str, Any]]", ray.get(actor.get_status.remote(job_id)))
     if not result:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
 
@@ -281,7 +281,7 @@ async def list_tuner_runs(
 ) -> APIResponse:
     """List all active tuning runs."""
     actor = get_status_actor()
-    job_ids = cast("list[str]", ray.get(actor.get_all_job_ids.remote()))
+    job_ids = cast("List[str]", ray.get(actor.get_all_job_ids.remote()))
     return APIResponse(
         success=True,
         data={"active_jobs": job_ids},
@@ -315,7 +315,7 @@ async def list_completed_jobs(
 
 
 @app.get("/openapi.json", include_in_schema=False)
-def custom_openapi() -> dict[str, Any]:
+def custom_openapi() -> Dict[str, Any]:
     """Return custom OpenAPI specification."""
     openapi_path = Path("openapi/gromacs-tuner-openapi.yaml")
     with openapi_path.open() as f:
