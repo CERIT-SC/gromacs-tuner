@@ -1,7 +1,6 @@
 import logging
 import os
 import secrets
-import sqlite3
 import uuid
 import zipfile
 from pathlib import Path
@@ -10,14 +9,17 @@ from typing import Annotated, Any, Dict, List, Optional, cast
 
 import ray
 import yaml
+from common.config import TPR_DIR
+from common.utils import cleanup_tmp_files, find_valid_replica_dirs
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
-from rayworker_code.tuner import TuneStatusActor, run_custom_single, run_replica_exchange_remote, run_tuning
+from rayworker import TuneStatusActor, run_custom_tuning, run_replica_exchange_tuning, run_tuning
+from rayworker.db.models import Trial, get_session
+from rayworker.db.operations import delete_trials_by_job_id
+from sqlalchemy import select
 from starlette.concurrency import run_in_threadpool
-
-from app.utils import cleanup_tmp_files, find_valid_replica_dirs
 
 logger = logging.getLogger("gromacs-tuner")
 logger.setLevel(logging.INFO)
@@ -25,8 +27,6 @@ handler = logging.StreamHandler()
 formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 handler.setFormatter(formatter)
 logger.addHandler(handler)
-
-TPR_DIR = Path("/tmp/tpr")
 
 
 class APIResponse(BaseModel):
@@ -91,25 +91,6 @@ def _extract_zip(zip_path: Path, extract_to: Path) -> None:
         zip_ref.extractall(extract_to)
 
 
-def _delete_job_from_db(job_id: str) -> int:
-    """Delete all DB trial records for a given job_id."""
-    db_path = Path(os.environ.get("TUNER_DB", "/data/tuner.db"))
-    if not db_path.exists():
-        return 0
-
-    try:
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM trials WHERE job_id = ?", (job_id,))
-        deleted = cursor.rowcount if cursor.rowcount is not None else 0
-        conn.commit()
-        conn.close()
-        return deleted
-    except sqlite3.Error:
-        logger.exception("Failed to delete job %s from SQLite", job_id)
-        return 0
-
-
 @app.post("/api/tuner_runs")
 async def create_tuner_run(
     _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)],
@@ -159,7 +140,7 @@ async def run_replica_exchange(
         raise HTTPException(status_code=400, detail="No valid replica directories with .tpr files found")
 
     actor = get_status_actor()
-    run_replica_exchange_remote.remote(job_id, str(base_path), replica_dirs, actor)
+    run_replica_exchange_tuning.remote(job_id, str(base_path), replica_dirs, actor)
 
     logger.info("Started replica exchange job %s with %d replicas", job_id, len(replica_dirs))
     return APIResponse(
@@ -219,7 +200,7 @@ async def run_custom_single_endpoint(
     job_id = str(uuid.uuid4())
     cleanup_tmp_files(job_id)
     actor = get_status_actor()
-    run_custom_single.remote(job_id, str(file_path), actor, extra_args)  # type: ignore[call-arg]
+    run_custom_tuning.remote(job_id, str(file_path), actor, extra_args)
 
     logger.info("Started custom job %s", job_id)
     return APIResponse(
@@ -235,7 +216,7 @@ async def delete_tuner_run(
     _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)],
 ) -> APIResponse:
     """Delete a tuning run by job ID."""
-    deleted_db_rows = _delete_job_from_db(job_id)
+    deleted_db_rows = delete_trials_by_job_id(job_id)
 
     deleted_actor_state = False
     try:
@@ -294,19 +275,13 @@ async def list_completed_jobs(
     _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)],
 ) -> APIResponse:
     """List all completed jobs from the database."""
-    db_path = Path(os.environ.get("TUNER_DB", "/data/tuner.db"))
-    if not db_path.exists():
-        return APIResponse(
-            success=True,
-            data={"completed_jobs": []},
-            message="Completed jobs listed",
-        )
+    session = get_session()
+    try:
+        stmt = select(Trial.job_id).distinct()
+        jobs = [row[0] for row in session.execute(stmt).all()]
+    finally:
+        session.close()
 
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute("SELECT DISTINCT job_id FROM trials")
-    jobs = [row[0] for row in cursor.fetchall()]
-    conn.close()
     return APIResponse(
         success=True,
         data={"completed_jobs": jobs},

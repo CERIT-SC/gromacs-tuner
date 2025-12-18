@@ -1,3 +1,5 @@
+"""Common utilities shared across the GROMACS tuner."""
+
 import hashlib
 import logging
 import shutil
@@ -6,12 +8,12 @@ from typing import List, Union
 
 import ray
 
+from common.config import TPR_DIR
+
 logger = logging.getLogger("gromacs-tuner.utils")
 
-DEFAULT_TPR_DIR = Path("/tmp/tpr")
 
-
-def cleanup_tmp_files(job_id: str, directory: Path = DEFAULT_TPR_DIR) -> None:
+def cleanup_tmp_files(job_id: str, directory: Path = TPR_DIR) -> None:
     """Remove temporary files associated with a job ID."""
     for path in directory.glob(f"{job_id}*"):
         try:
@@ -46,5 +48,4 @@ def get_cluster_status() -> str:
         used_gpu = int(total.get("GPU", 0) - avail.get("GPU", 0))
         return f"{used_cpu}/{int(total.get('CPU', 0))} CPUs, {used_gpu}/{int(total.get('GPU', 0))} GPUs used"
     except ray.exceptions.RaySystemError:
-        logger.exception("Ray cluster error")
         return "N/A"
