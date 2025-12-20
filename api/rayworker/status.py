@@ -1,14 +1,15 @@
 """Ray actor for tracking tuning job status."""
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 import ray
-from common.utils import get_cluster_status
 
-from rayworker.db.operations import get_trials_by_tpr_hash
+from api.db.operations import get_trials_by_tpr_hash
+from api.schemas import JobInfo, JobStatus, JobStatusResponse, TrialConfig, TrialInfo, TrialResponse
+from api.utils import get_cluster_status
 
-logger = logging.getLogger("gromacs-tuner.status")
+logger = logging.getLogger(__name__)
 
 
 @ray.remote
@@ -18,29 +19,20 @@ class TuneStatusActor:
     def __init__(self) -> None:
         """Initialize the status actor with empty job tracking."""
         logger.info("Initializing TuneStatusActor")
-        self.jobs: Dict[str, Dict[str, Any]] = {}
+        self.jobs: Dict[str, JobInfo] = {}
 
     def register_job(self, job_id: str, tpr_hash: str, total_configs: int) -> None:
         """Register a new tuning job."""
         logger.info("Registering job %s with %d configs", job_id, total_configs)
 
-        # Load existing results from DB for this TPR
-        cached = get_trials_by_tpr_hash(tpr_hash)
-        trials = {
-            t["trial_id"]: {
-                "config": t["config"],
-                "status": t["status"],
-                "performance": t["performance"],
-            }
-            for t in cached
-        }
+        trials = get_trials_by_tpr_hash(tpr_hash)
 
-        self.jobs[job_id] = {
-            "tpr_hash": tpr_hash,
-            "total": total_configs,
-            "trials": trials,
-            "status": "RUNNING",
-        }
+        self.jobs[job_id] = JobInfo(
+            tpr_hash=tpr_hash,
+            total=total_configs,
+            status=JobStatus.RUNNING,
+            trials=trials,
+        )
 
         if trials:
             logger.info("Loaded %d cached results for job %s", len(trials), job_id)
@@ -49,7 +41,7 @@ class TuneStatusActor:
         self,
         job_id: str,
         trial_id: str,
-        config: Dict[str, Any],
+        config: TrialConfig,
         status: str,
         performance: Optional[float] = None,
     ) -> None:
@@ -57,45 +49,62 @@ class TuneStatusActor:
         if job_id not in self.jobs:
             return
 
-        self.jobs[job_id]["trials"][trial_id] = {
-            "config": config,
-            "status": status,
-            "performance": performance,
-        }
+        self.jobs[job_id].trials[trial_id] = TrialInfo(
+            config=config,
+            status=status,
+            performance=performance,
+        )
 
     def complete_job(self, job_id: str) -> None:
-        """Mark a job as completed."""
+        """Mark a job as completed successfully after all trials finish."""
         if job_id in self.jobs:
-            self.jobs[job_id]["status"] = "COMPLETED"
+            self.jobs[job_id].status = JobStatus.TERMINATED
 
-    def get_status(self, job_id: str) -> Optional[Dict[str, Any]]:
+    def fail_job(self, job_id: str, error: str) -> None:
+        """Mark a job as failed with an error message."""
+        if job_id not in self.jobs:
+            self.jobs[job_id] = JobInfo(
+                tpr_hash="",
+                total=0,
+                status=JobStatus.ERROR,
+                error=error,
+            )
+        else:
+            self.jobs[job_id].status = JobStatus.ERROR
+            self.jobs[job_id].error = error
+
+    def get_status(self, job_id: str) -> Optional[JobStatusResponse]:
         """Get job status with trial details."""
         job = self.jobs.get(job_id)
         if not job:
             return None
 
-        summary = {"RUNNING": 0, "PENDING": 0, "TERMINATED": 0, "ERROR": 0}
+        summary = {status.value: 0 for status in JobStatus}
         trials = []
 
-        for tid, t in job["trials"].items():
-            status = t["status"]
-            summary[status] = summary.get(status, 0) + 1
+        for trial_id, trial in job.trials.items():
+            summary[trial.status] = summary.get(trial.status, 0) + 1
             trials.append(
-                {
-                    "id": tid,
-                    "status": status,
-                    **t["config"],
-                    "performance": t.get("performance"),
-                }
+                TrialResponse(
+                    id=trial_id,
+                    status=trial.status,
+                    ntomp=trial.config.ntomp,
+                    np=trial.config.np,
+                    nb=trial.config.nb,
+                    pme=trial.config.pme,
+                    performance=trial.performance,
+                    type=trial.config.type,
+                )
             )
 
-        return {
-            "tuner_run_id": job_id,
-            "job_status": job["status"],
-            "summary": summary,
-            "trials": trials,
-            "cluster_resources": get_cluster_status(),
-        }
+        return JobStatusResponse(
+            tuner_run_id=job_id,
+            job_status=job.status,
+            summary=summary,
+            trials=trials,
+            cluster_resources=get_cluster_status(),
+            error=job.error,
+        )
 
     def get_all_job_ids(self) -> List[str]:
         """Get all registered job IDs."""

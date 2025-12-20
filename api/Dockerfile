@@ -8,8 +8,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app/ app/
-COPY rayworker_code/ rayworker_code/
+COPY . api/
 
 ENV PYTHONPATH=/app \
     PYTHONUNBUFFERED=1
@@ -23,4 +22,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request; import sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health').getcode() == 200 else 1)"
 
-CMD ["python", "app/start.py"]
+CMD ["python", "api/start.py"]

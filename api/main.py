@@ -1,5 +1,4 @@
 import logging
-import os
 import secrets
 import uuid
 import zipfile
@@ -9,19 +8,19 @@ from typing import Annotated, Any, Dict, List, Optional, cast
 
 import ray
 import yaml
-from common.config import TPR_DIR
-from common.utils import cleanup_tmp_files, find_valid_replica_dirs
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
-from rayworker import TuneStatusActor, run_custom_tuning, run_replica_exchange_tuning, run_tuning
-from rayworker.db.models import Trial, get_session
-from rayworker.db.operations import delete_trials_by_job_id
-from sqlalchemy import select
 from starlette.concurrency import run_in_threadpool
 
-logger = logging.getLogger("gromacs-tuner")
+from api.config import POD_NAMESPACE, TPR_DIR, TUNER_PASSWORD, TUNER_USER
+from api.db.operations import delete_trials_by_job_id, get_all_job_ids
+from api.rayworker import TuneStatusActor, run_custom_tuning, run_replica_exchange_tuning, run_tuning
+from api.schemas import JobStatus, JobStatusResponse
+from api.utils import cleanup_tmp_files, find_valid_replica_dirs
+
+logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 handler = logging.StreamHandler()
 formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -41,9 +40,6 @@ class APIResponse(BaseModel):
 app = FastAPI(title="GROMACS Tuner API")
 security = HTTPBasic()
 
-TUNER_USER = os.getenv("TUNER_USER", "admin")
-TUNER_PASSWORD = os.getenv("TUNER_PASSWORD", "gromacs123")
-
 
 def verify_credentials(credentials: Annotated[HTTPBasicCredentials, Depends(security)]) -> None:
     """Verify HTTP Basic Auth credentials against environment variables."""
@@ -62,7 +58,6 @@ app.add_middleware(
 )
 
 status_actor: Any = None
-POD_NAMESPACE = os.getenv("POD_NAMESPACE", "default")
 
 
 def get_status_actor() -> Any:
@@ -111,7 +106,7 @@ async def create_tuner_run(
     logger.info("Started tuning job %s", job_id)
     return APIResponse(
         success=True,
-        data={"tuner_run_id": job_id, "status": "RUNNING"},
+        data={"tuner_run_id": job_id, "status": JobStatus.PENDING},
         message="Tuning job started",
     )
 
@@ -145,7 +140,7 @@ async def run_replica_exchange(
     logger.info("Started replica exchange job %s with %d replicas", job_id, len(replica_dirs))
     return APIResponse(
         success=True,
-        data={"tuner_run_id": job_id, "status": "RUNNING", "replica_count": len(replica_dirs)},
+        data={"tuner_run_id": job_id, "status": JobStatus.PENDING, "replica_count": len(replica_dirs)},
         message="Replica exchange job started",
     )
 
@@ -157,18 +152,13 @@ async def get_status(
 ) -> APIResponse:
     """Get the status of a tuning job including trial results."""
     actor = get_status_actor()
-    result = cast("Optional[Dict[str, Any]]", ray.get(actor.get_status.remote(job_id)))
+    result: Optional[JobStatusResponse] = ray.get(actor.get_status.remote(job_id))
     if not result:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
 
     return APIResponse(
         success=True,
-        data={
-            "tuner_run_id": job_id,
-            "summary": result["summary"],
-            "trials": result["trials"],
-            "cluster_resources": result.get("cluster_resources", "N/A"),
-        },
+        data=result.to_dict(),
         message="Status retrieved successfully",
     )
 
@@ -200,12 +190,12 @@ async def run_custom_single_endpoint(
     job_id = str(uuid.uuid4())
     cleanup_tmp_files(job_id)
     actor = get_status_actor()
-    run_custom_tuning.remote(job_id, str(file_path), actor, extra_args)
+    run_custom_tuning.remote(job_id, str(file_path), actor, extra_args)  # type: ignore[call-arg]
 
     logger.info("Started custom job %s", job_id)
     return APIResponse(
         success=True,
-        data={"tuner_run_id": job_id, "status": "RUNNING"},
+        data={"tuner_run_id": job_id, "status": JobStatus.PENDING},
         message="Custom job started",
     )
 
@@ -275,12 +265,7 @@ async def list_completed_jobs(
     _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)],
 ) -> APIResponse:
     """List all completed jobs from the database."""
-    session = get_session()
-    try:
-        stmt = select(Trial.job_id).distinct()
-        jobs = [row[0] for row in session.execute(stmt).all()]
-    finally:
-        session.close()
+    jobs = get_all_job_ids()
 
     return APIResponse(
         success=True,

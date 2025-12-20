@@ -6,15 +6,15 @@ import re
 import shlex
 import subprocess
 from pathlib import Path
-from typing import Any, Dict
 
-from common import RAY_GMX_LOGS
+from api.config import RAY_GMX_LOGS
+from api.schemas import TrialConfig
 
-logger = logging.getLogger("gromacs-tuner.runner")
+logger = logging.getLogger(__name__)
 
 
 def run_mdrun(
-    config: Dict[str, Any],
+    config: TrialConfig,
     tpr_path: str,
     trial_id: str,
     extra_args: str = "",
@@ -27,7 +27,7 @@ def run_mdrun(
     trial_dir = RAY_GMX_LOGS / trial_id
     trial_dir.mkdir(parents=True, exist_ok=True)
 
-    os.environ["OMP_NUM_THREADS"] = str(config["ntomp"])
+    os.environ["OMP_NUM_THREADS"] = str(config.ntomp)
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     cmd = _build_command(config, tpr_path)
@@ -47,25 +47,25 @@ def run_mdrun(
     return _parse_performance(stdout_log, stderr_log)
 
 
-def _build_command(config: Dict[str, Any], tpr_path: str) -> list[str]:
+def _build_command(config: TrialConfig, tpr_path: str) -> list[str]:
     """Build the mpirun + gmx mdrun command."""
     cmd = [
         "mpirun",
         "-np",
-        str(config["np"]),
+        str(config.np),
         "gmx",
         "mdrun",
         "-ntomp",
-        str(config["ntomp"]),
+        str(config.ntomp),
         "-nb",
-        config["nb"],
+        config.nb,
         "-pme",
-        config["pme"],
+        config.pme,
         "-s",
         tpr_path,
     ]
 
-    if config["pme"] == "cpu" and config["np"] > 1:
+    if config.pme == "cpu" and config.np > 1:
         cmd += ["-npme", "1"]
 
     return cmd

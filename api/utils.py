@@ -8,9 +8,9 @@ from typing import List, Union
 
 import ray
 
-from common.config import TPR_DIR
+from api.config import TPR_DIR
 
-logger = logging.getLogger("gromacs-tuner.utils")
+logger = logging.getLogger(__name__)
 
 
 def cleanup_tmp_files(job_id: str, directory: Path = TPR_DIR) -> None:
