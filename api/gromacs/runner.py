@@ -29,7 +29,8 @@ def run_mdrun(
     trial_dir = RAY_GMX_LOGS / trial_id
     trial_dir.mkdir(parents=True, exist_ok=True)
 
-    os.environ["OMP_NUM_THREADS"] = str(config.ntomp)
+    env = os.environ.copy()
+    env["OMP_NUM_THREADS"] = str(config.ntomp)
 
     cmd = _build_command(config, tpr_path)
     if extra_args:
@@ -40,9 +41,12 @@ def run_mdrun(
 
     try:
         with stdout_log.open("w") as out, stderr_log.open("w") as err:
-            subprocess.run(cmd, stdout=out, stderr=err, text=True, check=True)
+            subprocess.run(cmd, stdout=out, stderr=err, text=True, check=True, env=env)
     except subprocess.CalledProcessError as e:
         logger.error("GROMACS failed with code %d for trial %s", e.returncode, trial_id)
+        return 0.0
+    except Exception:
+        logger.exception("GROMACS execution failed for trial %s", trial_id)
         return 0.0
 
     return _parse_performance(stdout_log, stderr_log)
@@ -89,7 +93,8 @@ def run_replica_exchange(
     trial_dir = RAY_GMX_LOGS / trial_id
     trial_dir.mkdir(parents=True, exist_ok=True)
 
-    os.environ["OMP_NUM_THREADS"] = str(ntomp)
+    env = os.environ.copy()
+    env["OMP_NUM_THREADS"] = str(ntomp)
 
     cmd = [
         "mpirun",
@@ -112,9 +117,12 @@ def run_replica_exchange(
 
     try:
         with stdout_log.open("w") as out, stderr_log.open("w") as err:
-            subprocess.run(cmd, stdout=out, stderr=err, text=True, cwd=base_path, check=True)
+            subprocess.run(cmd, stdout=out, stderr=err, text=True, cwd=base_path, check=True, env=env)
     except subprocess.CalledProcessError as e:
         logger.error("Replica exchange failed with code %d", e.returncode)
+        return 0.0
+    except Exception:
+        logger.exception("Replica exchange execution failed")
         return 0.0
 
     return _parse_replica_performance(base_path)

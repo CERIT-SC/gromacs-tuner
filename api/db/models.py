@@ -1,23 +1,28 @@
 """Database connection and schema for the GROMACS tuner."""
 
 import sqlite3
+from contextlib import contextmanager
+from typing import Generator
 
 from api.config import DB_PATH
 
 
-def get_connection() -> sqlite3.Connection:
-    """Get a new database connection with row factory enabled."""
-    conn = sqlite3.connect(DB_PATH)
+@contextmanager
+def get_connection() -> Generator[sqlite3.Connection, None, None]:
+    """Get a database connection from the pool (context manager)."""
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    return conn
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 def init_db() -> None:
     """Create all tables if they don't exist."""
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-    conn = get_connection()
-    try:
+    with get_connection() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS trials (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,5 +46,3 @@ def init_db() -> None:
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_tpr_config ON trials (tpr_hash, config_hash)")
 
         conn.commit()
-    finally:
-        conn.close()
