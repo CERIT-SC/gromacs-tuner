@@ -75,7 +75,7 @@ def tail(file: Union[Path, str], n: int = 10) -> str:
 
             chunk_lines = chunk.split(b"\n")
 
-            # handle partial line at the end of the chunk
+            # Handle partial line at the end of the chunk
             if lines_found and chunk_lines:
                 lines_found[0] = chunk_lines.pop() + lines_found[0]
 
