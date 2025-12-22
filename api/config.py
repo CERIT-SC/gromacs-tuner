@@ -19,3 +19,5 @@ NTOMP_OPTIONS = [1, 2, 4]
 NP_OPTIONS = [1, 2, 4]
 NB_OPTIONS = ["cpu", "gpu"]
 PME_OPTIONS = ["cpu", "gpu"]
+
+MAX_UPLOAD_SIZE = 10 * 1024**3  # 10 GB

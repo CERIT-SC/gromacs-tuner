@@ -6,9 +6,11 @@ import re
 import shlex
 import subprocess
 from pathlib import Path
+from typing import List
 
 from api.config import RAY_GMX_LOGS
 from api.schemas import TrialConfig
+from api.utils import tail
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +30,6 @@ def run_mdrun(
     trial_dir.mkdir(parents=True, exist_ok=True)
 
     os.environ["OMP_NUM_THREADS"] = str(config.ntomp)
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     cmd = _build_command(config, tpr_path)
     if extra_args:
@@ -37,17 +38,17 @@ def run_mdrun(
     stdout_log = trial_dir / "stdout.log"
     stderr_log = trial_dir / "stderr.log"
 
-    with stdout_log.open("w") as out, stderr_log.open("w") as err:
-        result = subprocess.run(cmd, stdout=out, stderr=err, text=True, check=False)
-
-    if result.returncode != 0:
-        logger.error("GROMACS failed with code %d for trial %s", result.returncode, trial_id)
+    try:
+        with stdout_log.open("w") as out, stderr_log.open("w") as err:
+            subprocess.run(cmd, stdout=out, stderr=err, text=True, check=True)
+    except subprocess.CalledProcessError as e:
+        logger.error("GROMACS failed with code %d for trial %s", e.returncode, trial_id)
         return 0.0
 
     return _parse_performance(stdout_log, stderr_log)
 
 
-def _build_command(config: TrialConfig, tpr_path: str) -> list[str]:
+def _build_command(config: TrialConfig, tpr_path: str) -> List[str]:
     """Build the mpirun + gmx mdrun command."""
     cmd = [
         "mpirun",
@@ -73,13 +74,13 @@ def _build_command(config: TrialConfig, tpr_path: str) -> list[str]:
 
 def _parse_performance(stdout_log: Path, stderr_log: Path) -> float:
     """Parse performance (ns/day) from GROMACS output."""
-    output = stdout_log.read_text() + stderr_log.read_text()
+    output = tail(stdout_log, n=50) + tail(stderr_log, n=50)
     match = re.search(r"Performance:\s+(\d+\.?\d*)", output)
     return float(match.group(1)) if match else 0.0
 
 
 def run_replica_exchange(
-    replica_dirs: list[str],
+    replica_dirs: List[str],
     base_path: Path,
     ntomp: int,
     trial_id: str,
@@ -89,7 +90,6 @@ def run_replica_exchange(
     trial_dir.mkdir(parents=True, exist_ok=True)
 
     os.environ["OMP_NUM_THREADS"] = str(ntomp)
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     cmd = [
         "mpirun",
@@ -110,11 +110,11 @@ def run_replica_exchange(
     stdout_log = trial_dir / "stdout.log"
     stderr_log = trial_dir / "stderr.log"
 
-    with stdout_log.open("w") as out, stderr_log.open("w") as err:
-        result = subprocess.run(cmd, stdout=out, stderr=err, text=True, cwd=base_path, check=False)
-
-    if result.returncode != 0:
-        logger.error("Replica exchange failed with code %d", result.returncode)
+    try:
+        with stdout_log.open("w") as out, stderr_log.open("w") as err:
+            subprocess.run(cmd, stdout=out, stderr=err, text=True, cwd=base_path, check=True)
+    except subprocess.CalledProcessError as e:
+        logger.error("Replica exchange failed with code %d", e.returncode)
         return 0.0
 
     return _parse_replica_performance(base_path)
@@ -124,9 +124,8 @@ def _parse_replica_performance(base_path: Path) -> float:
     """Parse performance from all replica logs and return the best."""
     perf_values = []
     for log_path in base_path.glob("rep_*/md.log"):
-        for line in log_path.read_text().splitlines():
-            if "Performance:" in line:
-                match = re.search(r"Performance:\s+(\d+\.?\d*)", line)
-                if match:
-                    perf_values.append(float(match.group(1)))
+        output = tail(log_path, n=50)
+        match = re.search(r"Performance:\s+(\d+\.?\d*)", output)
+        if match:
+            perf_values.append(float(match.group(1)))
     return max(perf_values) if perf_values else 0.0

@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 
 class JobStatus(str, Enum):
@@ -85,7 +85,7 @@ class JobStatusResponse:
     tuner_run_id: str
     job_status: str
     summary: Dict[str, int]
-    trials: list[TrialResponse]
+    trials: List[TrialResponse]
     cluster_resources: str
     error: Optional[str] = None
 

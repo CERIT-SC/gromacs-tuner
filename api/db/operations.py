@@ -70,7 +70,7 @@ def get_trials_by_tpr_hash(tpr_hash: str) -> Dict[str, TrialInfo]:
         rows = cursor.fetchall()
         return {
             row["trial_id"]: TrialInfo(
-                config=json.loads(row["config_json"]),
+                config=TrialConfig.from_dict(json.loads(row["config_json"])),
                 status=row["status"],
                 performance=row["performance"],
             )
@@ -104,7 +104,7 @@ def get_trials_by_job_id(job_id: str) -> Dict[str, TrialInfo]:
         rows = cursor.fetchall()
         return {
             row["trial_id"]: TrialInfo(
-                config=json.loads(row["config_json"]),
+                config=TrialConfig.from_dict(json.loads(row["config_json"])),
                 status=row["status"],
                 performance=row["performance"],
             )

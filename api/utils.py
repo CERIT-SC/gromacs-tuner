@@ -2,7 +2,9 @@
 
 import hashlib
 import logging
+import os
 import shutil
+from collections import deque
 from pathlib import Path
 from typing import List, Union
 
@@ -49,3 +51,38 @@ def get_cluster_status() -> str:
         return f"{used_cpu}/{int(total.get('CPU', 0))} CPUs, {used_gpu}/{int(total.get('GPU', 0))} GPUs used"
     except ray.exceptions.RaySystemError:
         return "N/A"
+
+
+def tail(file: Union[Path, str], n: int = 10) -> str:
+    """Read last n lines of a file efficiently by reading chunks from the end."""
+    file_path = Path(file) if isinstance(file, str) else file
+    with file_path.open("rb") as f:
+        f.seek(0, os.SEEK_END)
+        file_size = f.tell()
+
+        if file_size == 0:
+            return ""
+
+        lines_found: deque[bytes] = deque()
+        pos = file_size
+
+        while pos > 0 and len(lines_found) < n:
+            chunk_start = max(0, pos - 8192)
+            chunk_size = pos - chunk_start
+
+            f.seek(chunk_start)
+            chunk = f.read(chunk_size)
+
+            chunk_lines = chunk.split(b"\n")
+
+            # handle partial line at the end of the chunk
+            if lines_found and chunk_lines:
+                lines_found[0] = chunk_lines.pop() + lines_found[0]
+
+            # Prepend newly read lines to the deque
+            lines_found.extendleft(reversed(chunk_lines))
+
+            pos = chunk_start
+
+        result_lines = list(lines_found)[-n:]
+        return b"\n".join(result_lines).decode("utf-8", "replace")
