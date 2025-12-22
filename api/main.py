@@ -60,7 +60,7 @@ app.add_middleware(
 status_actor: Any = None
 
 
-def get_status_actor() -> Any:
+def get_status_actor() -> Any:  # noqa
     """Get or create the global Ray status actor."""
     global status_actor
     if status_actor is None:
@@ -96,9 +96,12 @@ def _extract_zip(zip_path: Path, extract_to: Path) -> None:
 @app.post("/api/tuner_runs")
 async def create_tuner_run(
     _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)],
-    file: Annotated[UploadFile, File(max_length=MAX_UPLOAD_SIZE)],
+    file: Annotated[UploadFile, File()],
 ) -> APIResponse:
     """Start a new hyperparameter tuning run with a .tpr file."""
+    if file.size and file.size > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=413, detail=f"File size exceeds limit of {MAX_UPLOAD_SIZE} bytes")
+
     if not file.filename or not file.filename.endswith(".tpr"):
         raise HTTPException(status_code=400, detail="Only .tpr files are allowed")
 
@@ -121,9 +124,12 @@ async def create_tuner_run(
 @app.post("/api/replica_exchange")
 async def run_replica_exchange(
     _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)],
-    file: Annotated[UploadFile, File(max_length=MAX_UPLOAD_SIZE)],
+    file: Annotated[UploadFile, File()],
 ) -> APIResponse:
     """Start a replica exchange run with a .zip file containing replica directories."""
+    if file.size and file.size > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=413, detail=f"File size exceeds limit of {MAX_UPLOAD_SIZE} bytes")
+
     if not file.filename or not file.filename.endswith(".zip"):
         raise HTTPException(status_code=400, detail="Only .zip files are accepted for replica exchange")
 
@@ -173,10 +179,13 @@ async def get_status(
 @app.post("/api/custom_run")
 async def run_custom_single_endpoint(
     _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)],
-    file: Annotated[UploadFile, File(max_length=MAX_UPLOAD_SIZE)],
+    file: Annotated[UploadFile, File()],
     extra_args: str = "",
 ) -> APIResponse:
     """Run a custom GROMACS tuning job with extra command-line arguments."""
+    if file.size and file.size > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=413, detail=f"File size exceeds limit of {MAX_UPLOAD_SIZE} bytes")
+
     if not file.filename or not file.filename.endswith(".zip"):
         raise HTTPException(status_code=400, detail="Only .zip files are allowed")
 

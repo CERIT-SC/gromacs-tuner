@@ -36,7 +36,7 @@ def _run_single_trial(
     tpr_hash: str,
     config: TrialConfig,
     cfg_hash: str,
-    status_actor: Any,
+    status_actor: Any,  # noqa
     extra_args: str = "",
 ) -> Dict[str, Any]:
     """Execute a single GROMACS trial."""
@@ -62,7 +62,7 @@ def _run_single_trial(
 def run_tuning(
     job_id: str,
     tpr_path: str,
-    status_actor: Any,
+    status_actor: Any,  # noqa
 ) -> List[Dict[str, Any]]:
     """
     Run grid search tuning for GROMACS.
@@ -111,7 +111,7 @@ def run_tuning(
 def run_custom_tuning(
     job_id: str,
     tpr_path: str,
-    status_actor: Any,
+    status_actor: Any,  # noqa
     extra_args: str = "",
 ) -> List[Dict[str, Any]]:
     """Run tuning with custom extra arguments."""
@@ -148,7 +148,7 @@ def run_replica_exchange_tuning(
     job_id: str,
     base_path: str,
     replica_dirs: List[str],
-    status_actor: Any,
+    status_actor: Any,  # noqa
 ) -> List[Dict[str, Any]]:
     """Run replica exchange with different ntomp values."""
     try:
