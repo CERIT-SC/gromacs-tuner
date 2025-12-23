@@ -2,14 +2,14 @@ import os
 from pathlib import Path
 
 DB_PATH = Path(os.getenv("TUNER_DB", "/data/tuner.db"))
-RAY_GMX_LOGS = Path("/tmp/ray_gmx_logs")
 TPR_DIR = Path("/tmp/tpr")
+JOBS_DIR = TPR_DIR / "jobs"
 
 TUNER_USER = os.getenv("TUNER_USER", "admin")
 TUNER_PASSWORD = os.getenv("TUNER_PASSWORD", "gromacs123")
 
-MAX_CPU = int(os.getenv("REPLICA_EXCHANGE_CPU", "32"))
-MAX_GPU = int(os.getenv("REPLICA_EXCHANGE_GPU", "1"))
+MAX_CPU = int(os.getenv("MAX_CPU", "32"))
+MAX_GPU = int(os.getenv("MAX_GPU", "1"))
 
 POD_NAMESPACE = os.getenv("POD_NAMESPACE", "default")
 

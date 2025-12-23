@@ -10,7 +10,7 @@ from typing import List, Union
 
 import ray
 
-from api.config import TPR_DIR
+from api.config import JOBS_DIR, TPR_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +27,15 @@ def cleanup_tmp_files(job_id: str, directory: Path = TPR_DIR) -> None:
                 logger.info("Deleted file: %s", path)
         except OSError:
             logger.exception("Failed to delete %s", path)
+
+    # Also clean up trial directories
+    trial_job_dir = JOBS_DIR / job_id
+    if trial_job_dir.exists() and trial_job_dir.is_dir():
+        try:
+            shutil.rmtree(trial_job_dir)
+            logger.info("Deleted trial directory: %s", trial_job_dir)
+        except OSError:
+            logger.exception("Failed to delete %s", trial_job_dir)
 
 
 def find_valid_replica_dirs(base_path: Union[Path, str]) -> List[str]:

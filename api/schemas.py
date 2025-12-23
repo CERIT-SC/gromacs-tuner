@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+from api.gromacs.config import TrialConfig
+
 
 class JobStatus(str, Enum):
     """Status of a job."""
@@ -13,35 +15,6 @@ class JobStatus(str, Enum):
     RUNNING = "RUNNING"
     TERMINATED = "TERMINATED"
     ERROR = "ERROR"
-
-
-@dataclass
-class TrialConfig:
-    """Configuration for a GROMACS trial."""
-
-    np: int = 1  # Number of MPI ranks
-    ntomp: int = 0  # Number of OpenMP threads per MPI rank to start (0 is guess)
-    nb: str = "auto"  # Calculate non-bonded interactions on: auto, cpu, gpu
-    pme: str = "auto"  # Perform PME calculations on: auto, cpu, gpu
-    type: Optional[str] = None
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for serialization."""
-        result = {"ntomp": self.ntomp, "np": self.np, "nb": self.nb, "pme": self.pme}
-        if self.type:
-            result["type"] = self.type
-        return result
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "TrialConfig":
-        """Create from dictionary."""
-        return cls(
-            ntomp=data["ntomp"],
-            np=data.get("np", 1),
-            nb=data.get("nb", "gpu"),
-            pme=data.get("pme", "gpu"),
-            type=data.get("type"),
-        )
 
 
 @dataclass

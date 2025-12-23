@@ -6,7 +6,8 @@ from typing import Dict, List, Optional
 import ray
 
 from api.db.operations import get_trials_by_tpr_hash
-from api.schemas import JobInfo, JobStatus, JobStatusResponse, TrialConfig, TrialInfo, TrialResponse
+from api.gromacs.config import TrialConfig
+from api.schemas import JobInfo, JobStatus, JobStatusResponse, TrialInfo, TrialResponse
 from api.utils import get_cluster_status
 
 logger = logging.getLogger(__name__)

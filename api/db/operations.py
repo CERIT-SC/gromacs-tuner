@@ -6,7 +6,8 @@ import sqlite3
 from typing import Dict, List, Optional, Set
 
 from api.db.models import get_connection
-from api.schemas import JobStatus, TrialConfig, TrialInfo
+from api.gromacs.config import TrialConfig
+from api.schemas import JobStatus, TrialInfo
 
 logger = logging.getLogger(__name__)
 

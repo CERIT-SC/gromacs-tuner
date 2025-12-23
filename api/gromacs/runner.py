@@ -8,8 +8,8 @@ import subprocess
 from pathlib import Path
 from typing import List
 
-from api.config import RAY_GMX_LOGS
-from api.schemas import TrialConfig
+from api.config import JOBS_DIR
+from api.gromacs.config import TrialConfig
 from api.utils import tail
 
 logger = logging.getLogger(__name__)
@@ -19,6 +19,7 @@ def run_mdrun(
     config: TrialConfig,
     tpr_path: str,
     trial_id: str,
+    job_id: str,
     extra_args: str = "",
 ) -> float:
     """
@@ -26,7 +27,7 @@ def run_mdrun(
 
     Returns 0.0 on failure.
     """
-    trial_dir = RAY_GMX_LOGS / trial_id
+    trial_dir = JOBS_DIR / job_id / trial_id
     trial_dir.mkdir(parents=True, exist_ok=True)
 
     env = os.environ.copy()
@@ -41,9 +42,11 @@ def run_mdrun(
 
     try:
         with stdout_log.open("w") as out, stderr_log.open("w") as err:
-            subprocess.run(cmd, stdout=out, stderr=err, text=True, check=True, env=env)
+            subprocess.run(cmd, stdout=out, stderr=err, text=True, check=True, env=env, cwd=trial_dir)
     except subprocess.CalledProcessError as e:
         logger.error("GROMACS failed with code %d for trial %s", e.returncode, trial_id)
+        if stderr_log.exists():
+            logger.error("GROMACS stderr:\n%s", tail(stderr_log, n=20))
         return 0.0
     except Exception:
         logger.exception("GROMACS execution failed for trial %s", trial_id)
@@ -68,6 +71,8 @@ def _build_command(config: TrialConfig, tpr_path: str) -> List[str]:
         config.pme,
         "-s",
         tpr_path,
+        "-cpt",
+        "-1",  # Disable checkpointing for tuning
     ]
 
     if config.pme == "cpu" and config.np > 1:
@@ -88,9 +93,10 @@ def run_replica_exchange(
     base_path: Path,
     ntomp: int,
     trial_id: str,
+    job_id: str,
 ) -> float:
     """Run replica exchange MD and return best performance."""
-    trial_dir = RAY_GMX_LOGS / trial_id
+    trial_dir = JOBS_DIR / job_id / trial_id
     trial_dir.mkdir(parents=True, exist_ok=True)
 
     env = os.environ.copy()

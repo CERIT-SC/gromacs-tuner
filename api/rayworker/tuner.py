@@ -15,8 +15,8 @@ from api.db.operations import (
     try_claim_trial,
     update_trial_result,
 )
-from api.gromacs import config_hash, generate_all_configs, run_mdrun, run_replica_exchange
-from api.schemas import JobStatus, TrialConfig
+from api.gromacs import TrialConfig, run_mdrun, run_replica_exchange
+from api.schemas import JobStatus
 from api.utils import sha256_of_file
 
 logger = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ init_db()
 logger.info("Tuner module initialized")
 
 
-@ray.remote(num_gpus=1)
+@ray.remote
 def _run_single_trial(
     job_id: str,
     tpr_path: str,
@@ -49,7 +49,7 @@ def _run_single_trial(
 
     ray.get(status_actor.update_trial.remote(job_id, trial_id, config, JobStatus.RUNNING))
 
-    performance = run_mdrun(config, tpr_path, trial_id, extra_args)
+    performance = run_mdrun(config, tpr_path, trial_id, job_id, extra_args)
 
     status = JobStatus.TERMINATED if performance > 0 else JobStatus.ERROR
     update_trial_result(tpr_hash, cfg_hash, status, performance)
@@ -69,12 +69,12 @@ def run_tuning(
     """
     try:
         tpr_hash = sha256_of_file(tpr_path)
-        all_configs = generate_all_configs()
+        all_configs = TrialConfig.generate_all_configs()
         completed_hashes = get_completed_config_hashes(tpr_hash)
 
         ray.get(status_actor.register_job.remote(job_id, tpr_hash, len(all_configs)))
 
-        pending_configs = [(cfg, config_hash(cfg)) for cfg in all_configs if config_hash(cfg) not in completed_hashes]
+        pending_configs = [(cfg, cfg.hash) for cfg in all_configs if cfg.hash not in completed_hashes]
 
         logger.info(
             "Job %s: %d total configs, %d cached, %d to run",
@@ -89,10 +89,12 @@ def run_tuning(
             ray.get(status_actor.complete_job.remote(job_id))
             return
 
-        futures = []
-        for config, cfg_hash in pending_configs:
-            future = _run_single_trial.remote(job_id, tpr_path, tpr_hash, config, cfg_hash, status_actor)
-            futures.append(future)
+        futures = [
+            _run_single_trial.options(num_cpus=cfg.num_cpus, num_gpus=cfg.num_gpus).remote(
+                job_id, tpr_path, tpr_hash, cfg, cfg_hash, status_actor
+            )
+            for cfg, cfg_hash in pending_configs
+        ]
 
         ray.get(futures)
         ray.get(status_actor.complete_job.remote(job_id))
@@ -112,19 +114,27 @@ def run_custom_tuning(
     """Run tuning with custom extra arguments."""
     try:
         tpr_hash = sha256_of_file(tpr_path)
-        all_configs = generate_all_configs()
+        all_configs = TrialConfig.generate_all_configs()
         completed_hashes = get_completed_config_hashes(tpr_hash)
 
         ray.get(status_actor.register_job.remote(job_id, tpr_hash, len(all_configs)))
 
-        pending_configs = [(cfg, config_hash(cfg)) for cfg in all_configs if config_hash(cfg) not in completed_hashes]
+        pending_configs = [(cfg, cfg.hash) for cfg in all_configs if cfg.hash not in completed_hashes]
 
         if not pending_configs:
             ray.get(status_actor.complete_job.remote(job_id))
             return
 
         futures = [
-            _run_single_trial.remote(job_id, tpr_path, tpr_hash, cfg, cfg_hash, status_actor, extra_args)  # type: ignore[call-arg]
+            _run_single_trial.options(num_cpus=cfg.num_cpus, num_gpus=cfg.num_gpus).remote(
+                job_id,
+                tpr_path,
+                tpr_hash,
+                cfg,
+                cfg_hash,
+                status_actor,
+                extra_args,  # type: ignore[call-arg]
+            )
             for cfg, cfg_hash in pending_configs
         ]
 
@@ -154,7 +164,7 @@ def run_replica_exchange_tuning(
 
             ray.get(status_actor.update_trial.remote(job_id, trial_id, config, JobStatus.RUNNING))
 
-            performance = run_replica_exchange(replica_dirs, base_dir, ntomp, trial_id)
+            performance = run_replica_exchange(replica_dirs, base_dir, ntomp, trial_id, job_id)
 
             status = JobStatus.TERMINATED if performance > 0 else JobStatus.ERROR
             ray.get(status_actor.update_trial.remote(job_id, trial_id, config, status, performance))

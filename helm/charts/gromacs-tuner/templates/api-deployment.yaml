@@ -42,10 +42,10 @@ spec:
               secretKeyRef:
                 name: tuner-auth
                 key: password
-          - name: REPLICA_EXCHANGE_CPU
-            value: {{ .Values.replicaExchange.cpu | quote }}
-          - name: REPLICA_EXCHANGE_GPU
-            value: {{ .Values.replicaExchange.gpu | quote }}
+          - name: MAX_CPU
+            value: {{ .Values.ray.worker.numCpu | quote }}
+          - name: MAX_GPU
+            value: {{ .Values.ray.worker.numGpu | quote }}
         ports:
         - containerPort: 8000
         resources:
