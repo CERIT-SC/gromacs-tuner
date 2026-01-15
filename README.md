@@ -5,7 +5,8 @@ This project deploys a tuning API for GROMACS using Ray Tune on Kubernetes.
 ## Prerequisites
 
 -   [Helm](https://helm.sh/) and [kubectl](https://kubernetes.io/docs/tasks/tools/) must be installed and configured to interact with your Kubernetes cluster.
--   Ensure your target namespace has sufficient resources: a minimum of 32 CPU requests and a GPU request (see src/helm/charts/gromacs-tuner/templates/raycluster.yaml).
+-   Ray operator must be installed in your cluster to provide the RayCluster CRDs.
+-   Ensure your target namespace has sufficient resources: a minimum of 32 CPU requests and a GPU request (see helm/charts/gromacs-tuner/templates/raycluster.yaml).
 -   [jq](https://stedolan.github.io/jq/) must be installed for processing JSON data.
 -   Update the API Docker image details in `values.yaml` (refer to `api/Dockerfile`) with your Harbor image information, including the correct image name and tag.
 
@@ -13,43 +14,50 @@ This project deploys a tuning API for GROMACS using Ray Tune on Kubernetes.
 
 1.  **Configure `values.yaml`:**
 
-    -   Set the `namespace` where the application will be deployed.
-    -   Specify the `ingress.host` for accessing the API and the `ingress.tls.secretName` for TLS configuration.
+    -   Specify the `ingress.host` for accessing the API and the `ingress.tlsSecretName` for TLS configuration.
     -   Provide the complete Docker `image.repository` and `image.tag` for the API.
-    - Create the Kubernetes Secret for API authentication:
 
-      ```bash
-      kubectl create secret generic tuner-auth \
-        --from-literal=user=admin \
-        --from-literal=password='strong-secret-here' \
-        --namespace <your_namespace>
-      ```
+2.  **Create Authentication Secret:**
 
-      Replace `'strong-secret-here'` with a secure password. This secret is required for HTTP Basic Auth on all tuning API endpoints.
-
-2.  **Deploy the Chart:**
-
-    Run the following Helm command to deploy the chart:
+    Create a Kubernetes secret named `tuner-auth` in your target namespace containing the `user` and `password` for API authentication.
 
     ```bash
-    helm install gromacs-tuner helm/charts/gromacs-tuner --namespace <your_namespace>
+    # Replace <namespace> with your target namespace (e.g., gromacs-tuner-ns)
+    kubectl create secret generic tuner-auth \
+      --namespace <namespace> \
+      --from-literal=user=admin \
+      --from-literal=password=your-strong-password
     ```
 
-    Replace `<your_namespace>` with the actual namespace you configured.
+3.  **Deploy:**
 
-3.  **Verify the Deployment:**
+    ```bash
+    cd helm/
+    make install
+    ```
+
+4.  **Verify the Deployment:**
 
     Check if the pods are running correctly:
 
     ```bash
-    kubectl get pods -n <your_namespace>
+    kubectl get pods -n gromacs-tuner
     ```
 
     Verify that the Ray cluster is properly deployed:
 
     ```bash
-    kubectl get rayclusters -n <your_namespace>
+    kubectl get rayclusters -n gromacs-tuner
     ```
+
+## Uninstalling
+
+To remove everything:
+
+```bash
+cd helm/
+make uninstall
+```
 
 ## Basic Workflow
 

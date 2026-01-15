@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: gromacs-tuner-api
-  namespace: {{ .Values.namespace }}
+  namespace: {{ .Release.Namespace }}
 spec:
   replicas: 1
   selector:
@@ -22,10 +22,10 @@ spec:
       containers:
       - name: api
         image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-        imagePullPolicy: Always
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
         env:
           - name: RAY_ADDRESS
-            value: "ray://raycluster-complete-head-svc:10001"
+            value: "ray://gromacs-tuner-raycluster-head-svc:10001"
           - name: TUNER_DB
             value: "/data/tuner.db"
           - name: TUNER_USER
@@ -42,11 +42,11 @@ spec:
         - containerPort: 8000
         resources:
           limits:
-            cpu: "1"
-            memory: "2Gi"
+            cpu: {{ .Values.api.resources.limits.cpu }}
+            memory: {{ .Values.api.resources.limits.memory }}
           requests:
-            cpu: "0.5"
-            memory: "1Gi"
+            cpu: {{ .Values.api.resources.requests.cpu }}
+            memory: {{ .Values.api.resources.requests.memory }}
         securityContext:
           runAsUser: 1000
           capabilities:
@@ -61,4 +61,4 @@ spec:
       volumes:
       - name: gromacs-pvc
         persistentVolumeClaim:
-          claimName: gromacs-pvc
+            claimName: gromacs-tuner-pvc

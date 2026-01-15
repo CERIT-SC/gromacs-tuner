@@ -1,8 +1,9 @@
+{{- if .Values.ingress.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: gromacs-tuner-api-ingress
-  namespace: {{ .Values.namespace }}
+  namespace: {{ .Release.Namespace }}
   annotations:
     kubernetes.io/tls-acme: "true"
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
@@ -11,10 +12,10 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - "{{ .Values.ingress.host }}"
-      secretName: "{{ .Values.ingress.tlsSecretName }}"
+        - {{ .Values.ingress.host }}
+      secretName: {{ .Values.ingress.tlsSecretName | default (printf "%s-tls" (.Values.ingress.host | replace "." "-")) }}
   rules:
-    - host: "{{ .Values.ingress.host }}"
+    - host: {{ .Values.ingress.host }}
       http:
         paths:
           - path: /api
@@ -24,3 +25,4 @@ spec:
                 name: gromacs-tuner-api-svc
                 port:
                   number: 8000
+{{- end }}

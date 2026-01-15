@@ -3,10 +3,10 @@ kind: RayCluster
 metadata:
   labels:
     controller-tools.k8s.io: "1.0"
-  name: raycluster-complete
-  namespace: {{ .Values.namespace }}
+  name: gromacs-tuner-raycluster
+  namespace: {{ .Release.Namespace }}
 spec:
-  rayVersion: '2.42.1'
+  rayVersion: {{ .Values.ray.version }}
 
   headGroupSpec:
     serviceType: ClusterIP
@@ -26,7 +26,7 @@ spec:
 
         containers:
         - name: ray-head
-          image: cerit.io/adamondrejka/gmx-cuda-ray-2-42-1-with-user
+          image: {{ .Values.ray.image }}
 
           ports:
             - { containerPort: 6379, name: gcs }
@@ -40,12 +40,15 @@ spec:
 
           volumeMounts:
             - { mountPath: /tmp/ray, name: ray-logs }
-            - { mountPath: /tmp/tpr, name: gromacs-pvc }
-            - { mountPath: /data,    name: gromacs-pvc }
+            - { mountPath: /data,    name: gromacs-tuner-pvc }
 
           resources:
-            limits:   { cpu: "1",   memory: "8Gi" }
-            requests: { cpu: "0.5", memory: "4Gi" }
+            limits:
+              cpu: {{ .Values.ray.head.resources.limits.cpu }}
+              memory: {{ .Values.ray.head.resources.limits.memory }}
+            requests:
+              cpu: {{ .Values.ray.head.resources.requests.cpu }}
+              memory: {{ .Values.ray.head.resources.requests.memory }}
 
           securityContext:
             runAsUser: 1000
@@ -57,12 +60,12 @@ spec:
 
         volumes:
           - { name: ray-logs, emptyDir: {} }
-          - { name: gromacs-pvc, persistentVolumeClaim: { claimName: gromacs-pvc } }
+          - { name: gromacs-tuner-pvc, persistentVolumeClaim: { claimName: gromacs-tuner-pvc } }
 
   workerGroupSpecs:
-  - replicas: 1
-    minReplicas: 1
-    maxReplicas: 1
+  - replicas: {{ .Values.ray.worker.replicas }}
+    minReplicas: {{ .Values.ray.worker.replicas }}
+    maxReplicas: {{ .Values.ray.worker.replicas }}
     groupName: gromacs-group
     rayStartParams:
       num-cpus: '32'
@@ -71,10 +74,10 @@ spec:
     template:
       spec:
         nodeSelector:
-          nvidia.com/gpu.product: 'NVIDIA-A40'
+          {{- toYaml .Values.ray.worker.nodeSelector | nindent 10 }}
 
         securityContext:
-          fsGroup: 1000                     # pod‑level
+          fsGroup: 1000  # pod‑level
           fsGroupChangePolicy: OnRootMismatch
           runAsNonRoot: true
           seccompProfile:
@@ -82,7 +85,7 @@ spec:
 
         containers:
         - name: ray-worker
-          image: cerit.io/adamondrejka/gmx-cuda-ray-2-42-1-with-user
+          image: {{ .Values.ray.image }}
 
           lifecycle:
             preStop:
@@ -90,19 +93,12 @@ spec:
 
           volumeMounts:
             - { mountPath: /tmp/ray,         name: ray-logs }
-            - { mountPath: /tmp/tpr,         name: gromacs-pvc }
+            - { mountPath: /tmp/tpr,         name: gromacs-tuner-pvc }
             - { mountPath: /tmp/ray_gmx_logs, name: gromacs-logs }
-            - { mountPath: /data,            name: gromacs-pvc }  # ← new
+            - { mountPath: /data,            name: gromacs-tuner-pvc }
 
           resources:
-            limits:
-              cpu: "32"
-              memory: "128Gi"
-              nvidia.com/gpu: "1"
-            requests:
-              cpu: "32"
-              memory: "16Gi"
-              nvidia.com/gpu: "1"
+            {{- toYaml .Values.ray.worker.resources | nindent 12 }}
 
           securityContext:
             runAsUser: 1000
@@ -115,4 +111,4 @@ spec:
         volumes:
           - { name: ray-logs,      emptyDir: {} }
           - { name: gromacs-logs, emptyDir: {} }
-          - { name: gromacs-pvc,  persistentVolumeClaim: { claimName: gromacs-pvc } }
+          - { name: gromacs-tuner-pvc,  persistentVolumeClaim: { claimName: gromacs-tuner-pvc } }
