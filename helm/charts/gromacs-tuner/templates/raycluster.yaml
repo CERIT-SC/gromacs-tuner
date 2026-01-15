@@ -8,6 +8,17 @@ metadata:
 spec:
   rayVersion: {{ .Values.ray.version }}
   enableInTreeAutoscaling: true
+  autoscalerOptions:
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+          - "ALL"
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 100
+      seccompProfile:
+        type: RuntimeDefault
 
   headGroupSpec:
     serviceType: ClusterIP
