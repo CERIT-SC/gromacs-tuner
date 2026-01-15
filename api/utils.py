@@ -4,6 +4,7 @@ import hashlib
 import logging
 import os
 import shutil
+import threading
 import time
 from collections import deque
 from pathlib import Path
@@ -52,14 +53,17 @@ def sha256_of_file(path: Union[Path, str]) -> str:
 
 
 _cluster_status_cache = {"status": "N/A", "time": 0.0}
+_cluster_status_lock = threading.Lock()
 
 
 def get_cluster_status() -> str:
-    """Get current Ray cluster resource usage."""
+    """Get current Ray cluster resource usage with caching."""
     now = time.time()
-    # Cache for a short time to avoid hitting GCS too hard if called frequently
-    if now - _cluster_status_cache["time"] < 2.0:
-        return _cluster_status_cache["status"]
+
+    with _cluster_status_lock:
+        # Cache for a short time to avoid hitting GCS too hard if called frequently
+        if now - _cluster_status_cache["time"] < 2.0:
+            return _cluster_status_cache["status"]
 
     try:
         start_time = time.time()
@@ -75,15 +79,20 @@ def get_cluster_status() -> str:
         used_gpu = int(total.get("GPU", 0) - avail.get("GPU", 0))
         status = f"{used_cpu}/{int(total.get('CPU', 0))} CPUs, {used_gpu}/{int(total.get('GPU', 0))} GPUs used"
 
-        _cluster_status_cache["status"] = status
-        _cluster_status_cache["time"] = now
+        with _cluster_status_lock:
+            _cluster_status_cache["status"] = status
+            _cluster_status_cache["time"] = time.time()
         return status
     except ray.exceptions.RaySystemError:
         logger.exception("RaySystemError in get_cluster_status")
-        return _cluster_status_cache["status"]
+        with _cluster_status_lock:
+            _cluster_status_cache["time"] = time.time()
+            return _cluster_status_cache["status"]
     except Exception:
         logger.exception("Unexpected error in get_cluster_status")
-        return _cluster_status_cache["status"]
+        with _cluster_status_lock:
+            _cluster_status_cache["time"] = time.time()
+            return _cluster_status_cache["status"]
 
 
 def tail(file: Union[Path, str], n: int = 10) -> str:

@@ -175,9 +175,12 @@ async def get_status(
             status_code=504,
             detail=f"Timeout fetching status for job '{job_id}' from Ray cluster. The cluster might be busy or scaling.",
         )
-    except Exception as e:
+    except Exception:
         logger.exception("Error fetching status for job %s", job_id)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error while fetching status for job '{job_id}'",
+        )
 
     if not result:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
