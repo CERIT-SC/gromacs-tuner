@@ -7,6 +7,7 @@ metadata:
   namespace: {{ .Release.Namespace }}
 spec:
   rayVersion: {{ .Values.ray.version }}
+  enableInTreeAutoscaling: true
 
   headGroupSpec:
     serviceType: ClusterIP
@@ -64,8 +65,8 @@ spec:
 
   workerGroupSpecs:
   - replicas: {{ .Values.ray.worker.replicas }}
-    minReplicas: {{ .Values.ray.worker.replicas }}
-    maxReplicas: {{ .Values.ray.worker.replicas }}
+    minReplicas: {{ .Values.ray.worker.minReplicas }}
+    maxReplicas: {{ .Values.ray.worker.maxReplicas }}
     groupName: gromacs-group
     rayStartParams:
       num-cpus: {{ .Values.ray.worker.numCpu | quote }}
