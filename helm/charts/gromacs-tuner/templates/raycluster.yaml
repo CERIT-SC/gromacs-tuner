@@ -68,8 +68,8 @@ spec:
     maxReplicas: {{ .Values.ray.worker.replicas }}
     groupName: gromacs-group
     rayStartParams:
-      num-cpus: '32'
-      num-gpus: '1'
+      num-cpus: {{ .Values.ray.worker.numCpu | quote }}
+      num-gpus: {{ .Values.ray.worker.numGpu | quote }}
 
     template:
       spec:
@@ -94,7 +94,6 @@ spec:
           volumeMounts:
             - { mountPath: /tmp/ray,         name: ray-logs }
             - { mountPath: /tmp/tpr,         name: gromacs-tuner-pvc }
-            - { mountPath: /tmp/ray_gmx_logs, name: gromacs-logs }
             - { mountPath: /data,            name: gromacs-tuner-pvc }
 
           resources:
@@ -110,5 +109,4 @@ spec:
 
         volumes:
           - { name: ray-logs,      emptyDir: {} }
-          - { name: gromacs-logs, emptyDir: {} }
           - { name: gromacs-tuner-pvc,  persistentVolumeClaim: { claimName: gromacs-tuner-pvc } }
