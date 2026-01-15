@@ -1,5 +1,6 @@
 """Ray actor for tracking tuning job status."""
 
+import asyncio
 import logging
 from typing import Dict, List, Optional
 
@@ -21,6 +22,20 @@ class TuneStatusActor:
         """Initialize the status actor with empty job tracking."""
         logger.info("Initializing TuneStatusActor")
         self.jobs: Dict[str, JobInfo] = {}
+        self.cluster_status_cache = "Initializing resources..."
+        asyncio.create_task(self._update_cluster_resources_loop())
+
+    async def _update_cluster_resources_loop(self) -> None:
+        """Periodic background task to update Ray cluster status."""
+        while True:
+            try:
+                # This is a synchronous call but it's okay in create_task
+                # if we use run_in_executor to avoid blocking the loop
+                loop = asyncio.get_running_loop()
+                self.cluster_status_cache = await loop.run_in_executor(None, get_cluster_status)
+            except Exception:
+                logger.exception("Error updating cluster status in background")
+            await asyncio.sleep(10)
 
     def register_job(self, job_id: str, tpr_hash: str, total_configs: int) -> None:
         """Register a new tuning job."""
@@ -38,6 +53,20 @@ class TuneStatusActor:
         if trials:
             logger.info("Loaded %d cached results for job %s", len(trials), job_id)
 
+    def register_pending_trials(self, job_id: str, configs_with_hashes: List[tuple]) -> None:
+        """Register multiple trials in PENDING state."""
+        if job_id not in self.jobs:
+            return
+
+        for config, cfg_hash in configs_with_hashes:
+            # Short trial_id for pending trials, will be updated when they start
+            pseudo_id = f"pending_{cfg_hash[:6]}"
+            if pseudo_id not in self.jobs[job_id].trials:
+                self.jobs[job_id].trials[pseudo_id] = TrialInfo(
+                    config=config,
+                    status=JobStatus.PENDING,
+                )
+
     def update_trial(
         self,
         job_id: str,
@@ -49,6 +78,11 @@ class TuneStatusActor:
         """Update a trial's status."""
         if job_id not in self.jobs:
             return
+
+        # Clean up any pending entry for this config hash if it exists
+        cfg_hash = config.hash
+        pseudo_id = f"pending_{cfg_hash[:6]}"
+        self.jobs[job_id].trials.pop(pseudo_id, None)
 
         self.jobs[job_id].trials[trial_id] = TrialInfo(
             config=config,
@@ -74,8 +108,9 @@ class TuneStatusActor:
             self.jobs[job_id].status = JobStatus.ERROR
             self.jobs[job_id].error = error
 
-    def get_status(self, job_id: str) -> Optional[JobStatusResponse]:
+    async def get_status(self, job_id: str) -> Optional[JobStatusResponse]:
         """Get job status with trial details."""
+        logger.info("Actor: get_status called for job %s", job_id)
         job = self.jobs.get(job_id)
         if not job:
             return None
@@ -103,7 +138,7 @@ class TuneStatusActor:
             job_status=job.status,
             summary=summary,
             trials=trials,
-            cluster_resources=get_cluster_status(),
+            cluster_resources=self.cluster_status_cache,
             error=job.error,
         )
 

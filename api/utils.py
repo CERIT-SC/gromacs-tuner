@@ -4,6 +4,7 @@ import hashlib
 import logging
 import os
 import shutil
+import time
 from collections import deque
 from pathlib import Path
 from typing import List, Union
@@ -50,16 +51,39 @@ def sha256_of_file(path: Union[Path, str]) -> str:
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+_cluster_status_cache = {"status": "N/A", "time": 0.0}
+
+
 def get_cluster_status() -> str:
     """Get current Ray cluster resource usage."""
+    now = time.time()
+    # Cache for a short time to avoid hitting GCS too hard if called frequently
+    if now - _cluster_status_cache["time"] < 2.0:
+        return _cluster_status_cache["status"]
+
     try:
+        start_time = time.time()
+        # ray.cluster_resources() can be slow when the cluster is autoscaling
         total = ray.cluster_resources()
         avail = ray.available_resources()
+        duration = time.time() - start_time
+
+        if duration > 2.0:
+            logger.warning("ray.cluster_resources() took %.2f seconds", duration)
+
         used_cpu = int(total.get("CPU", 0) - avail.get("CPU", 0))
         used_gpu = int(total.get("GPU", 0) - avail.get("GPU", 0))
-        return f"{used_cpu}/{int(total.get('CPU', 0))} CPUs, {used_gpu}/{int(total.get('GPU', 0))} GPUs used"
+        status = f"{used_cpu}/{int(total.get('CPU', 0))} CPUs, {used_gpu}/{int(total.get('GPU', 0))} GPUs used"
+
+        _cluster_status_cache["status"] = status
+        _cluster_status_cache["time"] = now
+        return status
     except ray.exceptions.RaySystemError:
-        return "N/A"
+        logger.exception("RaySystemError in get_cluster_status")
+        return _cluster_status_cache["status"]
+    except Exception:
+        logger.exception("Unexpected error in get_cluster_status")
+        return _cluster_status_cache["status"]
 
 
 def tail(file: Union[Path, str], n: int = 10) -> str:

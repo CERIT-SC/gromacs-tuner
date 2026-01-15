@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import secrets
 import shutil
@@ -164,11 +165,24 @@ async def get_status(
     _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)],
 ) -> APIResponse:
     """Get the status of a tuning job including trial results."""
+    logger.info("Fetching status for job %s", job_id)
     actor = get_status_actor()
-    result: Optional[JobStatusResponse] = await actor.get_status.remote(job_id)
+    try:
+        result: Optional[JobStatusResponse] = await asyncio.wait_for(actor.get_status.remote(job_id), timeout=15.0)
+    except asyncio.TimeoutError:
+        logger.error("Timeout fetching status for job %s from Ray actor after 15s", job_id)
+        raise HTTPException(
+            status_code=504,
+            detail=f"Timeout fetching status for job '{job_id}' from Ray cluster. The cluster might be busy or scaling.",
+        )
+    except Exception as e:
+        logger.exception("Error fetching status for job %s", job_id)
+        raise HTTPException(status_code=500, detail=str(e))
+
     if not result:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
 
+    logger.info("Retrieved status for job %s", job_id)
     return APIResponse(
         success=True,
         data=result.to_dict(),
