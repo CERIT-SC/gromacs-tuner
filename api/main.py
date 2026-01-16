@@ -248,7 +248,7 @@ async def delete_tuner_run(
     try:
         actor = get_status_actor()
         cancelled_actor_tasks = bool(await actor.cancel_job.remote(job_id))
-        deleted_db_rows = delete_incomplete_trials_by_job_id(job_id)
+        deleted_db_rows = await run_in_threadpool(delete_incomplete_trials_by_job_id, job_id)
         deleted_actor_state = bool(await actor.delete_job.remote(job_id))
     except Exception:
         logger.exception("Failed to delete job %s from status actor", job_id)
