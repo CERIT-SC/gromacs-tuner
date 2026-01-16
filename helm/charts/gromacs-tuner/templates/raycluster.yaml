@@ -9,6 +9,7 @@ spec:
   rayVersion: {{ .Values.ray.version }}
   enableInTreeAutoscaling: true
   autoscalerOptions:
+    idleTimeoutSeconds: {{ .Values.ray.autoscaler.idleTimeoutSeconds }}
     securityContext:
       allowPrivilegeEscalation: false
       capabilities:
