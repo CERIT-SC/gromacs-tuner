@@ -47,13 +47,13 @@ def _run_single_trial(
         logger.info("Config %s already claimed, skipping", cfg_hash)
         return
 
-    ray.get(status_actor.update_trial.remote(job_id, trial_id, config, JobStatus.RUNNING))
+    status_actor.update_trial.remote(job_id, trial_id, config, JobStatus.RUNNING)
 
     performance = run_mdrun(config, tpr_path, trial_id, job_id, extra_args)
 
     status = JobStatus.TERMINATED if performance > 0 else JobStatus.ERROR
     update_trial_result(tpr_hash, cfg_hash, status, performance)
-    ray.get(status_actor.update_trial.remote(job_id, trial_id, config, status, performance))
+    status_actor.update_trial.remote(job_id, trial_id, config, status, performance)
 
 
 @ray.remote
@@ -76,6 +76,9 @@ def run_tuning(
 
         pending_configs = [(cfg, cfg.hash) for cfg in all_configs if cfg.hash not in completed_hashes]
 
+        if pending_configs:
+            status_actor.register_pending_trials.remote(job_id, pending_configs)
+
         logger.info(
             "Job %s: %d total configs, %d cached, %d to run",
             job_id,
@@ -95,6 +98,8 @@ def run_tuning(
             )
             for cfg, cfg_hash in pending_configs
         ]
+
+        status_actor.register_trial_tasks.remote(job_id, futures)
 
         ray.get(futures)
         ray.get(status_actor.complete_job.remote(job_id))
@@ -121,6 +126,9 @@ def run_custom_tuning(
 
         pending_configs = [(cfg, cfg.hash) for cfg in all_configs if cfg.hash not in completed_hashes]
 
+        if pending_configs:
+            status_actor.register_pending_trials.remote(job_id, pending_configs)
+
         if not pending_configs:
             ray.get(status_actor.complete_job.remote(job_id))
             return
@@ -137,6 +145,8 @@ def run_custom_tuning(
             )
             for cfg, cfg_hash in pending_configs
         ]
+
+        status_actor.register_trial_tasks.remote(job_id, futures)
 
         ray.get(futures)
         ray.get(status_actor.complete_job.remote(job_id))
@@ -162,12 +172,12 @@ def run_replica_exchange_tuning(
             trial_id = f"rep_{ntomp}"
             config = TrialConfig(ntomp=ntomp, type="replica_exchange")
 
-            ray.get(status_actor.update_trial.remote(job_id, trial_id, config, JobStatus.RUNNING))
+            status_actor.update_trial.remote(job_id, trial_id, config, JobStatus.RUNNING)
 
             performance = run_replica_exchange(replica_dirs, base_dir, ntomp, trial_id, job_id)
 
             status = JobStatus.TERMINATED if performance > 0 else JobStatus.ERROR
-            ray.get(status_actor.update_trial.remote(job_id, trial_id, config, status, performance))
+            status_actor.update_trial.remote(job_id, trial_id, config, status, performance)
 
         ray.get(status_actor.complete_job.remote(job_id))
 
