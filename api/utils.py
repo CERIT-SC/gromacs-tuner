@@ -58,9 +58,8 @@ _cluster_status_lock = threading.Lock()
 
 def get_cluster_status() -> str:
     """Get current Ray cluster resource usage with caching."""
-    now = time.time()
-
     with _cluster_status_lock:
+        now = time.time()
         # Cache for a short time to avoid hitting GCS too hard if called frequently
         if now - _cluster_status_cache["time"] < 2.0:
             return _cluster_status_cache["status"]
@@ -86,12 +85,10 @@ def get_cluster_status() -> str:
     except ray.exceptions.RaySystemError:
         logger.exception("RaySystemError in get_cluster_status")
         with _cluster_status_lock:
-            _cluster_status_cache["time"] = time.time()
             return _cluster_status_cache["status"]
     except Exception:
         logger.exception("Unexpected error in get_cluster_status")
         with _cluster_status_lock:
-            _cluster_status_cache["time"] = time.time()
             return _cluster_status_cache["status"]
 
 
