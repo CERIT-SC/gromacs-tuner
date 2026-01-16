@@ -26,6 +26,8 @@ storage:
 ray:
   version: "2.42.1"
   image: "cerit.io/adamondrejka/gmx-cuda-ray-2-42-1-with-user"
+  autoscaler:
+    idleTimeoutSeconds: 3600  # 1 hour
 
   head:
     resources:
@@ -37,17 +39,17 @@ ray:
         memory: "4Gi"
 
   worker:
-    replicas: 1
+    replicas: 0
+    minReplicas: 0
+    maxReplicas: 5
     numCpu: 32
     numGpu: 1
-    nodeSelector:
-      nvidia.com/gpu.product: "NVIDIA-A40"
     resources:
       limits:
         cpu: "32"
         memory: "128Gi"
-        nvidia.com/gpu: "1"
+        nvidia.com/mig-1g.10gb: "1"
       requests:
         cpu: "32"
         memory: "16Gi"
-        nvidia.com/gpu: "1"
+        nvidia.com/mig-1g.10gb: "1"

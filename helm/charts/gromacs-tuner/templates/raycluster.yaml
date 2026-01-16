@@ -7,6 +7,19 @@ metadata:
   namespace: {{ .Release.Namespace }}
 spec:
   rayVersion: {{ .Values.ray.version }}
+  enableInTreeAutoscaling: true
+  autoscalerOptions:
+    idleTimeoutSeconds: {{ .Values.ray.autoscaler.idleTimeoutSeconds }}
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+          - "ALL"
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 100
+      seccompProfile:
+        type: RuntimeDefault
 
   headGroupSpec:
     serviceType: ClusterIP
@@ -64,8 +77,8 @@ spec:
 
   workerGroupSpecs:
   - replicas: {{ .Values.ray.worker.replicas }}
-    minReplicas: {{ .Values.ray.worker.replicas }}
-    maxReplicas: {{ .Values.ray.worker.replicas }}
+    minReplicas: {{ .Values.ray.worker.minReplicas }}
+    maxReplicas: {{ .Values.ray.worker.maxReplicas }}
     groupName: gromacs-group
     rayStartParams:
       num-cpus: {{ .Values.ray.worker.numCpu | quote }}
@@ -73,9 +86,6 @@ spec:
 
     template:
       spec:
-        nodeSelector:
-          {{- toYaml .Values.ray.worker.nodeSelector | nindent 10 }}
-
         securityContext:
           fsGroup: 1000  # pod‑level
           fsGroupChangePolicy: OnRootMismatch
