@@ -3,7 +3,7 @@
 import asyncio
 import functools
 import logging
-from typing import Callable, Dict, List, Optional, cast
+from typing import Callable, Dict, List, Optional, Tuple, cast
 
 import ray
 
@@ -62,7 +62,7 @@ class TuneStatusActor:
         async with self._lock:
             self.trial_task_refs.setdefault(job_id, []).extend(refs)
 
-    async def register_pending_trials(self, job_id: str, configs_with_hashes: List[tuple]) -> None:
+    async def register_pending_trials(self, job_id: str, configs_with_hashes: List[Tuple[TrialConfig, str]]) -> None:
         """Register multiple trials in PENDING state."""
         async with self._lock:
             if job_id not in self.jobs:
