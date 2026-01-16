@@ -21,6 +21,8 @@ class TuneStatusActor:
         """Initialize the status actor with empty job tracking."""
         logger.info("Initializing TuneStatusActor")
         self.jobs: Dict[str, JobInfo] = {}
+        self.job_task_refs: Dict[str, List[ray.ObjectRef]] = {}
+        self.trial_task_refs: Dict[str, List[ray.ObjectRef]] = {}
 
     def register_job(self, job_id: str, tpr_hash: str, total_configs: int) -> None:
         """Register a new tuning job."""
@@ -37,6 +39,16 @@ class TuneStatusActor:
 
         if trials:
             logger.info("Loaded %d cached results for job %s", len(trials), job_id)
+
+    def register_job_task(self, job_id: str, ref: ray.ObjectRef) -> None:
+        """Register the top-level Ray task ref for a job."""
+        self.job_task_refs.setdefault(job_id, []).append(ref)
+
+    def register_trial_tasks(self, job_id: str, refs: List[ray.ObjectRef]) -> None:
+        """Register trial task refs for a job."""
+        if not refs:
+            return
+        self.trial_task_refs.setdefault(job_id, []).extend(refs)
 
     def register_pending_trials(self, job_id: str, configs_with_hashes: List[tuple]) -> None:
         """Register multiple trials in PENDING state."""
@@ -134,4 +146,27 @@ class TuneStatusActor:
 
     def delete_job(self, job_id: str) -> bool:
         """Remove a job from memory."""
+        self.job_task_refs.pop(job_id, None)
+        self.trial_task_refs.pop(job_id, None)
         return self.jobs.pop(job_id, None) is not None
+
+    def cancel_job(self, job_id: str) -> bool:
+        """Cancel running tasks for a job and mark it as cancelled."""
+        refs: List[ray.ObjectRef] = []
+        refs.extend(self.job_task_refs.pop(job_id, []))
+        refs.extend(self.trial_task_refs.pop(job_id, []))
+
+        cancelled_any = False
+        for ref in refs:
+            try:
+                ray.cancel(ref, force=True)
+                cancelled_any = True
+            except Exception:
+                logger.exception("Failed to cancel task for job %s", job_id)
+
+        job = self.jobs.get(job_id)
+        if job:
+            job.status = JobStatus.ERROR
+            job.error = "Cancelled by user"
+
+        return cancelled_any or job_id in self.jobs

@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
 from api.config import MAX_UPLOAD_SIZE, POD_NAMESPACE, STATUS_QUERY_TIMEOUT, TPR_DIR, TUNER_PASSWORD, TUNER_USER
-from api.db.operations import delete_trials_by_job_id, get_all_job_ids
+from api.db.operations import delete_incomplete_trials_by_job_id, get_all_job_ids
 from api.rayworker import TuneStatusActor, run_custom_tuning, run_replica_exchange_tuning, run_tuning
 from api.schemas import JobStatus, JobStatusResponse
 from api.utils import cleanup_tmp_files, find_valid_replica_dirs
@@ -112,7 +112,8 @@ async def create_tuner_run(
     job_id = str(uuid.uuid4())
     cleanup_tmp_files(job_id)
     actor = get_status_actor()
-    run_tuning.remote(job_id, str(file_path), actor)
+    job_ref = run_tuning.remote(job_id, str(file_path), actor)
+    actor.register_job_task.remote(job_id, job_ref)
 
     logger.info("Started tuning job %s", job_id)
     return APIResponse(
@@ -149,7 +150,8 @@ async def run_replica_exchange(
         raise HTTPException(status_code=400, detail="No valid replica directories with .tpr files found")
 
     actor = get_status_actor()
-    run_replica_exchange_tuning.remote(job_id, str(base_path), replica_dirs, actor)
+    job_ref = run_replica_exchange_tuning.remote(job_id, str(base_path), replica_dirs, actor)
+    actor.register_job_task.remote(job_id, job_ref)
 
     logger.info("Started replica exchange job %s with %d replicas", job_id, len(replica_dirs))
     return APIResponse(
@@ -223,7 +225,8 @@ async def run_custom_single_endpoint(
     job_id = str(uuid.uuid4())
     cleanup_tmp_files(job_id)
     actor = get_status_actor()
-    run_custom_tuning.remote(job_id, str(file_path), actor, extra_args)  # type: ignore[call-arg]
+    job_ref = run_custom_tuning.remote(job_id, str(file_path), actor, extra_args)  # type: ignore[call-arg]
+    actor.register_job_task.remote(job_id, job_ref)
 
     logger.info("Started custom job %s", job_id)
     return APIResponse(
@@ -239,18 +242,20 @@ async def delete_tuner_run(
     _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)],
 ) -> APIResponse:
     """Delete a tuning run by job ID."""
-    deleted_db_rows = delete_trials_by_job_id(job_id)
-
+    deleted_db_rows = 0
+    cancelled_actor_tasks = False
     deleted_actor_state = False
     try:
         actor = get_status_actor()
+        cancelled_actor_tasks = bool(await actor.cancel_job.remote(job_id))
+        deleted_db_rows = delete_incomplete_trials_by_job_id(job_id)
         deleted_actor_state = bool(await actor.delete_job.remote(job_id))
     except Exception:
         logger.exception("Failed to delete job %s from status actor", job_id)
 
     cleanup_tmp_files(job_id)
 
-    if deleted_db_rows == 0 and not deleted_actor_state:
+    if deleted_db_rows == 0 and not deleted_actor_state and not cancelled_actor_tasks:
         raise HTTPException(
             status_code=404,
             detail={

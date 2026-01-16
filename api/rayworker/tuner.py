@@ -99,6 +99,8 @@ def run_tuning(
             for cfg, cfg_hash in pending_configs
         ]
 
+        status_actor.register_trial_tasks.remote(job_id, futures)
+
         ray.get(futures)
         ray.get(status_actor.complete_job.remote(job_id))
 
@@ -143,6 +145,8 @@ def run_custom_tuning(
             )
             for cfg, cfg_hash in pending_configs
         ]
+
+        status_actor.register_trial_tasks.remote(job_id, futures)
 
         ray.get(futures)
         ray.get(status_actor.complete_job.remote(job_id))

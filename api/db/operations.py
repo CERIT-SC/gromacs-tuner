@@ -112,6 +112,17 @@ def delete_trials_by_job_id(job_id: str) -> int:
         return cursor.rowcount
 
 
+def delete_incomplete_trials_by_job_id(job_id: str) -> int:
+    """Delete non-terminated trials for a job. Returns count of deleted rows."""
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "DELETE FROM trials WHERE job_id = ? AND status != ?",
+            (job_id, JobStatus.TERMINATED),
+        )
+        conn.commit()
+        return cursor.rowcount
+
+
 def get_all_job_ids() -> List[str]:
     """Get all unique job IDs from the database."""
     with get_connection() as conn:
