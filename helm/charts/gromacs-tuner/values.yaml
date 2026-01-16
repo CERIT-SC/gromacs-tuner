@@ -44,14 +44,12 @@ ray:
     maxReplicas: 5
     numCpu: 32
     numGpu: 1
-    nodeSelector:
-      nvidia.com/gpu.product: "NVIDIA-A40"
     resources:
       limits:
         cpu: "32"
         memory: "128Gi"
-        nvidia.com/gpu: "1"
+        nvidia.com/mig-1g.10gb: "1"
       requests:
         cpu: "32"
         memory: "16Gi"
-        nvidia.com/gpu: "1"
+        nvidia.com/mig-1g.10gb: "1"

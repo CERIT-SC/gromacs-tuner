@@ -86,9 +86,6 @@ spec:
 
     template:
       spec:
-        nodeSelector:
-          {{- toYaml .Values.ray.worker.nodeSelector | nindent 10 }}
-
         securityContext:
           fsGroup: 1000  # pod‑level
           fsGroupChangePolicy: OnRootMismatch
