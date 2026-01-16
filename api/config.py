@@ -21,3 +21,5 @@ NB_OPTIONS = ["cpu", "gpu"]
 PME_OPTIONS = ["cpu", "gpu"]
 
 MAX_UPLOAD_SIZE = 10 * 1024**3  # 10 GB
+
+STATUS_QUERY_TIMEOUT = float(os.getenv("STATUS_QUERY_TIMEOUT", "15.0"))

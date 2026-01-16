@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import List, Union
 
 import ray
+from ray.exceptions import RaySystemError
 
 from api.config import JOBS_DIR, TPR_DIR
 
@@ -58,37 +59,39 @@ _cluster_status_lock = threading.Lock()
 
 def get_cluster_status() -> str:
     """Get current Ray cluster resource usage with caching."""
+    now = time.time()
+    # First check without lock for fast path
+    if now - _cluster_status_cache["time"] < 2.0:
+        return _cluster_status_cache["status"]
+
     with _cluster_status_lock:
+        # Double-check after acquiring lock to prevent thundering herd
         now = time.time()
-        # Cache for a short time to avoid hitting GCS too hard if called frequently
         if now - _cluster_status_cache["time"] < 2.0:
             return _cluster_status_cache["status"]
 
-    try:
-        start_time = time.time()
-        # ray.cluster_resources() can be slow when the cluster is autoscaling
-        total = ray.cluster_resources()
-        avail = ray.available_resources()
-        duration = time.time() - start_time
+        try:
+            start_time = time.time()
+            # ray.cluster_resources() can be slow when the cluster is autoscaling
+            total = ray.cluster_resources()
+            avail = ray.available_resources()
+            duration = time.time() - start_time
 
-        if duration > 2.0:
-            logger.warning("ray.cluster_resources() took %.2f seconds", duration)
+            if duration > 2.0:
+                logger.warning("ray.cluster_resources() took %.2f seconds", duration)
 
-        used_cpu = int(total.get("CPU", 0) - avail.get("CPU", 0))
-        used_gpu = int(total.get("GPU", 0) - avail.get("GPU", 0))
-        status = f"{used_cpu}/{int(total.get('CPU', 0))} CPUs, {used_gpu}/{int(total.get('GPU', 0))} GPUs used"
+            used_cpu = int(total.get("CPU", 0) - avail.get("CPU", 0))
+            used_gpu = int(total.get("GPU", 0) - avail.get("GPU", 0))
+            status = f"{used_cpu}/{int(total.get('CPU', 0))} CPUs, {used_gpu}/{int(total.get('GPU', 0))} GPUs used"
 
-        with _cluster_status_lock:
             _cluster_status_cache["status"] = status
             _cluster_status_cache["time"] = time.time()
-        return status
-    except ray.exceptions.RaySystemError:
-        logger.exception("RaySystemError in get_cluster_status")
-        with _cluster_status_lock:
+            return status
+        except RaySystemError:
+            logger.exception("RaySystemError in get_cluster_status")
             return _cluster_status_cache["status"]
-    except Exception:
-        logger.exception("Unexpected error in get_cluster_status")
-        with _cluster_status_lock:
+        except Exception:
+            logger.exception("Unexpected error in get_cluster_status")
             return _cluster_status_cache["status"]
 
 

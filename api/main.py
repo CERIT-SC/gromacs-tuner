@@ -15,7 +15,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from api.config import MAX_UPLOAD_SIZE, POD_NAMESPACE, TPR_DIR, TUNER_PASSWORD, TUNER_USER
+from api.config import MAX_UPLOAD_SIZE, POD_NAMESPACE, STATUS_QUERY_TIMEOUT, TPR_DIR, TUNER_PASSWORD, TUNER_USER
 from api.db.operations import delete_trials_by_job_id, get_all_job_ids
 from api.rayworker import TuneStatusActor, run_custom_tuning, run_replica_exchange_tuning, run_tuning
 from api.schemas import JobStatus, JobStatusResponse
@@ -168,9 +168,11 @@ async def get_status(
     logger.info("Fetching status for job %s", job_id)
     actor = get_status_actor()
     try:
-        result: Optional[JobStatusResponse] = await asyncio.wait_for(actor.get_status.remote(job_id), timeout=15.0)
+        result: Optional[JobStatusResponse] = await asyncio.wait_for(
+            actor.get_status.remote(job_id), timeout=STATUS_QUERY_TIMEOUT
+        )
     except asyncio.TimeoutError:
-        logger.error("Timeout fetching status for job %s from Ray actor after 15s", job_id)
+        logger.error("Timeout fetching status for job %s from Ray actor after %.1fs", job_id, STATUS_QUERY_TIMEOUT)
         raise HTTPException(
             status_code=504,
             detail=f"Timeout fetching status for job '{job_id}' from Ray cluster. The cluster might be busy or scaling.",
