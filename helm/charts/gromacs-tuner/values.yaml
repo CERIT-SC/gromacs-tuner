@@ -27,7 +27,7 @@ ray:
   version: "2.42.1"
   image: "cerit.io/adamondrejka/gmx-cuda-ray-2-42-1-with-user"
   autoscaler:
-    idleTimeoutSeconds: 3600  # 1 hour
+    idleTimeoutSeconds: 300
 
   head:
     resources:

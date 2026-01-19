@@ -3,13 +3,123 @@
 import json
 import logging
 import sqlite3
-from typing import Dict, List, Optional, Set
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Set
 
 from api.db.models import get_connection
 from api.gromacs.config import TrialConfig
 from api.schemas import JobStatus, TrialInfo
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Job Operations
+# =============================================================================
+
+
+def create_job(
+    job_id: str,
+    job_type: str,
+    tpr_path: str,
+    extra_args: Optional[str] = None,
+) -> None:
+    """Create a new job record with PENDING status."""
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO jobs (job_id, job_type, tpr_path, status, extra_args)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (job_id, job_type, tpr_path, JobStatus.PENDING, extra_args),
+        )
+        conn.commit()
+
+
+def update_job_ray_id(job_id: str, ray_job_id: str) -> bool:
+    """Store the Ray Job submission ID. Returns True if updated."""
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            UPDATE jobs
+            SET ray_job_id = ?, updated_at = ?
+            WHERE job_id = ?
+            """,
+            (ray_job_id, datetime.now(), job_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+def update_job_status(job_id: str, status: str, error: Optional[str] = None) -> bool:
+    """Update job status and optionally error message. Returns True if updated."""
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            UPDATE jobs
+            SET status = ?, error = ?, updated_at = ?
+            WHERE job_id = ?
+            """,
+            (status, error, datetime.now(), job_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+def update_job_config(job_id: str, tpr_hash: str, total_configs: int) -> bool:
+    """Update job with TPR hash and total config count. Returns True if updated."""
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            UPDATE jobs
+            SET tpr_hash = ?, total_configs = ?, updated_at = ?
+            WHERE job_id = ?
+            """,
+            (tpr_hash, total_configs, datetime.now(), job_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+def get_job(job_id: str) -> Optional[Dict[str, Any]]:
+    """Get job record by ID."""
+    with get_connection() as conn:
+        cursor = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+
+def get_jobs_by_status(statuses: List[str]) -> List[Dict[str, Any]]:
+    """Get all jobs with the given statuses."""
+    if not statuses:
+        return []
+    placeholders = ",".join("?" for _ in statuses)
+    with get_connection() as conn:
+        cursor = conn.execute(
+            f"SELECT * FROM jobs WHERE status IN ({placeholders})",
+            statuses,
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def get_all_jobs() -> List[Dict[str, Any]]:
+    """Get all job records."""
+    with get_connection() as conn:
+        cursor = conn.execute("SELECT * FROM jobs ORDER BY created_at DESC")
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def delete_job(job_id: str) -> bool:
+    """Delete a job record. Returns True if deleted."""
+    with get_connection() as conn:
+        cursor = conn.execute("DELETE FROM jobs WHERE job_id = ?", (job_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+# =============================================================================
+# Trial Operations
+# =============================================================================
 
 
 def try_claim_trial(
