@@ -14,6 +14,7 @@ MAX_GPU = int(os.getenv("MAX_GPU", "1"))
 POD_NAMESPACE = os.getenv("POD_NAMESPACE", "default")
 
 RAY_ADDRESS = os.getenv("RAY_ADDRESS", "ray://raycluster-complete-head-svc:10001")
+RAY_DASHBOARD_ADDRESS = os.getenv("RAY_DASHBOARD_ADDRESS", "http://raycluster-complete-head-svc:8265")
 
 NTOMP_OPTIONS = [1, 2, 4]
 NP_OPTIONS = [1, 2, 4]
