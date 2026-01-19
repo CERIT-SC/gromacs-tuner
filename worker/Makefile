@@ -6,7 +6,7 @@ REGISTRY ?= cerit.io/xkrasa
 TAG ?= latest
 IMAGE := $(REGISTRY)/$(IMAGE_NAME):$(TAG)
 DOCKERFILE ?= Dockerfile
-CONTEXT ?= ..
+CONTEXT ?= .
 
 .PHONY: help build push clean tag
 

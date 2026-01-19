@@ -71,6 +71,8 @@ def get_cluster_status() -> str:
             return _cluster_status_cache["status"]
 
         try:
+            if not ray.is_initialized():
+                return _cluster_status_cache["status"]
             start_time = time.time()
             # ray.cluster_resources() can be slow when the cluster is autoscaling
             total = ray.cluster_resources()

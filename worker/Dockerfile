@@ -82,7 +82,7 @@ RUN cd gromacs-${GROMACS_VERSION} \
     && plumed patch -e gromacs-${GROMACS_VERSION} -p
 
 # Build GROMACS for multiple SIMD architectures
-COPY worker/build-gmx.sh /build/
+COPY build-gmx.sh /build/
 RUN chmod +x /build/build-gmx.sh
 
 # SSE2 (baseline, works on all x86_64)
@@ -119,8 +119,8 @@ COPY --from=builder /usr/local/lib/plumed/ /usr/local/lib/plumed/
 
 COPY --from=builder /gromacs /gromacs
 
-COPY worker/gmx-chooser.sh /gromacs/
-COPY worker/gmx /usr/local/bin/
+COPY gmx-chooser.sh /gromacs/
+COPY gmx /usr/local/bin/
 RUN chmod +x /gromacs/gmx-chooser.sh /usr/local/bin/gmx \
     && ln -s gmx /usr/local/bin/gmx_d \
     && ln -s gmx /usr/local/bin/mdrun \
@@ -129,31 +129,18 @@ RUN chmod +x /gromacs/gmx-chooser.sh /usr/local/bin/gmx \
 RUN ldconfig
 
 # -----------------------------------------------------------------------------
-# Python dependencies and API module for job execution
-# -----------------------------------------------------------------------------
-WORKDIR /app
-
-COPY worker/requirements.txt /app/worker-requirements.txt
-RUN pip install --no-cache-dir -r /app/worker-requirements.txt
-
-# Copy the api module (needed for job_entrypoint.py execution)
-# NOTE: Build from repo root with: docker build -f worker/Dockerfile .
-COPY api/ /app/api/
-
-ENV PYTHONPATH=/app
-
-# -----------------------------------------------------------------------------
 # Runtime configuration
 # -----------------------------------------------------------------------------
+WORKDIR /home/ray
+
 # Create mount points for shared storage
 RUN mkdir -p /mnt/gromacs-data /tmp/tpr /tmp/ray \
-    && chown -R ray:users /mnt/gromacs-data /tmp/tpr /tmp/ray /app
+    && chown -R ray:users /mnt/gromacs-data /tmp/tpr /tmp/ray
 
 # Switch to non-root user (UID 1000, matches Ray base image)
 USER ray
 
-RUN python -c "import ray; print(f'Ray version: {ray.__version__}')" \
-    && source /gromacs/gmx-chooser.sh && gmx --version | head -5
+RUN source /gromacs/gmx-chooser.sh && gmx --version | head -5
 
 # Default command (Ray worker is started by KubeRay operator)
 CMD ["ray", "start", "--block"]
