@@ -7,7 +7,7 @@ import re
 import shlex
 import subprocess
 from pathlib import Path
-from typing import List
+from typing import Dict, List
 
 from api.config import JOBS_DIR
 from api.gromacs.config import TrialConfig
@@ -76,7 +76,7 @@ def _build_command(config: TrialConfig, tpr_path: str) -> List[str]:
 def _parse_performance(stdout_log: Path, stderr_log: Path) -> float:
     """Parse performance (ns/day) from GROMACS output."""
     output = tail(stdout_log, n=50) + tail(stderr_log, n=50)
-    match = re.search(r"Performance:\\s+(\\d+\\.?\\d*)", output)
+    match = re.search(r"Performance:\s+(\d+\.?\d*)", output)
     return float(match.group(1)) if match else 0.0
 
 
@@ -84,7 +84,7 @@ def _run_command_with_logs(
     cmd: List[str],
     stdout_log: Path,
     stderr_log: Path,
-    env: dict,
+    env: Dict[str, str],
     cwd: Path,
     context: str,
 ) -> bool:
