@@ -7,8 +7,9 @@ import shutil
 import threading
 import time
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from pathlib import Path
-from typing import Union
+from typing import Dict, Tuple, Union
 
 import ray
 from ray.exceptions import RaySystemError
@@ -48,32 +49,41 @@ def sha256_of_file(path: Union[Path, str]) -> str:
 
 _cluster_status_cache = {"status": "N/A", "time": 0.0}
 _cluster_status_lock = threading.Lock()
+_status_executor = ThreadPoolExecutor(max_workers=1)
+
+CLUSTER_STATUS_TTL = 10.0
+RAY_FETCH_TIMEOUT = 4.0
 
 
 def get_cluster_status() -> str:
     """Get current Ray cluster resource usage with caching."""
     now = time.time()
     # First check without lock for fast path
-    if now - _cluster_status_cache["time"] < 2.0:
+    if now - _cluster_status_cache["time"] < CLUSTER_STATUS_TTL:
         return _cluster_status_cache["status"]
 
     with _cluster_status_lock:
         # Double-check after acquiring lock to prevent thundering herd
         now = time.time()
-        if now - _cluster_status_cache["time"] < 2.0:
+        if now - _cluster_status_cache["time"] < CLUSTER_STATUS_TTL:
             return _cluster_status_cache["status"]
 
         try:
             if not ray.is_initialized():
                 return _cluster_status_cache["status"]
-            start_time = time.time()
-            # ray.cluster_resources() can be slow when the cluster is autoscaling
-            total = ray.cluster_resources()
-            avail = ray.available_resources()
-            duration = time.time() - start_time
 
-            if duration > 2.0:
-                logger.warning("ray.cluster_resources() took %.2f seconds", duration)
+            # Run Ray calls in a separate thread with a timeout
+            def _fetch() -> Tuple[Dict[str, float], Dict[str, float]]:
+                return ray.cluster_resources(), ray.available_resources()
+
+            future = _status_executor.submit(_fetch)
+            try:
+                total, avail = future.result(timeout=RAY_FETCH_TIMEOUT)
+            except TimeoutError:
+                logger.warning("ray.cluster_resources() timed out after %.1fs", RAY_FETCH_TIMEOUT)
+                # Update time so we don't try again immediately
+                _cluster_status_cache["time"] = time.time()
+                return _cluster_status_cache["status"]
 
             used_cpu = int(total.get("CPU", 0) - avail.get("CPU", 0))
             used_gpu = int(total.get("GPU", 0) - avail.get("GPU", 0))

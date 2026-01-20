@@ -1,6 +1,7 @@
 import logging
 import secrets
 import shutil
+import sqlite3
 import uuid
 import zipfile
 from pathlib import Path
@@ -126,25 +127,32 @@ async def get_status(
     """Get the status of a tuning job including trial results."""
     logger.info("Fetching status for job %s", job_id)
 
-    # Get job from database
-    job = await run_in_threadpool(get_job, job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+    try:
+        # Get job from database
+        job = await run_in_threadpool(get_job, job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
 
-    # Sync status with Ray (updates DB if needed)
-    await run_in_threadpool(sync_job_status, job_id)
+        # Sync status with Ray (updates DB if needed)
+        await run_in_threadpool(sync_job_status, job_id)
 
-    # Refresh job data after sync
-    job = await run_in_threadpool(get_job, job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+        # Refresh job data after sync
+        job = await run_in_threadpool(get_job, job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
 
-    # Get trials - prefer by tpr_hash if available, otherwise by job_id
-    tpr_hash = job.get("tpr_hash")
-    if tpr_hash:
-        trials_dict = await run_in_threadpool(get_trials_by_tpr_hash, tpr_hash)
-    else:
-        trials_dict = await run_in_threadpool(get_trials_by_job_id, job_id)
+        # Get trials - prefer by tpr_hash if available, otherwise by job_id
+        tpr_hash = job.get("tpr_hash")
+        if tpr_hash:
+            trials_dict = await run_in_threadpool(get_trials_by_tpr_hash, tpr_hash)
+        else:
+            trials_dict = await run_in_threadpool(get_trials_by_job_id, job_id)
+    except sqlite3.OperationalError as e:
+        logger.error("Database timeout while fetching status for job %s: %s", job_id, e)
+        raise HTTPException(
+            status_code=503,
+            detail="Database is busy or timed out. Please try again later.",
+        )
 
     # Build summary and trial list
     summary = {status.value: 0 for status in JobStatus}
@@ -287,7 +295,11 @@ async def list_tuner_runs(
 ) -> APIResponse:
     """List all active tuning runs (PENDING or RUNNING)."""
     active_statuses = [JobStatus.PENDING.value, JobStatus.RUNNING.value]
-    jobs = await run_in_threadpool(get_jobs_by_status, active_statuses)
+    try:
+        jobs = await run_in_threadpool(get_jobs_by_status, active_statuses)
+    except sqlite3.OperationalError:
+        raise HTTPException(status_code=503, detail="Database is busy. Please try again later.")
+
     job_ids = [job["job_id"] for job in jobs]
     return APIResponse(
         success=True,
@@ -302,7 +314,11 @@ async def list_completed_jobs(
 ) -> APIResponse:
     """List all completed jobs from the database."""
     completed_statuses = [JobStatus.TERMINATED.value, JobStatus.ERROR.value]
-    jobs = await run_in_threadpool(get_jobs_by_status, completed_statuses)
+    try:
+        jobs = await run_in_threadpool(get_jobs_by_status, completed_statuses)
+    except sqlite3.OperationalError:
+        raise HTTPException(status_code=503, detail="Database is busy. Please try again later.")
+
     job_ids = [job["job_id"] for job in jobs]
 
     return APIResponse(

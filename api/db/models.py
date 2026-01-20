@@ -10,9 +10,9 @@ from api.config import DB_PATH
 @contextmanager
 def get_connection() -> Generator[sqlite3.Connection, None, None]:
     """Get a database connection with concurrent access settings."""
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30.0)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=5.0)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA busy_timeout=30000")
+    conn.execute("PRAGMA busy_timeout=5000")
     try:
         yield conn
     finally:
