@@ -102,13 +102,6 @@ def get_jobs_by_status(statuses: List[str]) -> List[Dict[str, Any]]:
         return [dict(row) for row in cursor.fetchall()]
 
 
-def get_all_jobs() -> List[Dict[str, Any]]:
-    """Get all job records."""
-    with get_connection() as conn:
-        cursor = conn.execute("SELECT * FROM jobs ORDER BY created_at DESC")
-        return [dict(row) for row in cursor.fetchall()]
-
-
 def delete_job(job_id: str) -> bool:
     """Delete a job record. Returns True if deleted."""
     with get_connection() as conn:

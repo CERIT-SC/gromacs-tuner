@@ -18,7 +18,6 @@ from api.config import MAX_UPLOAD_SIZE, TPR_DIR, TUNER_PASSWORD, TUNER_USER
 from api.db.operations import (
     delete_incomplete_trials_by_job_id,
     delete_job,
-    get_all_jobs,
     get_job,
     get_jobs_by_status,
     get_trials_by_job_id,
@@ -355,29 +354,6 @@ async def list_completed_jobs(
         success=True,
         data={"completed_jobs": job_ids},
         message="Completed jobs listed",
-    )
-
-
-@app.get("/api/all_jobs")
-async def list_all_jobs(
-    _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)],
-) -> APIResponse:
-    """List all jobs with their statuses."""
-    jobs = await run_in_threadpool(get_all_jobs)
-    job_summaries = [
-        {
-            "job_id": job["job_id"],
-            "status": job["status"],
-            "job_type": job["job_type"],
-            "created_at": job["created_at"],
-        }
-        for job in jobs
-    ]
-
-    return APIResponse(
-        success=True,
-        data={"jobs": job_summaries},
-        message="All jobs listed",
     )
 
 
