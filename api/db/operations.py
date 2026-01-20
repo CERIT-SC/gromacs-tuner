@@ -36,21 +36,6 @@ def create_job(
         conn.commit()
 
 
-def update_job_ray_id(job_id: str, ray_job_id: str) -> bool:
-    """Store the Ray Job submission ID. Returns True if updated."""
-    with get_connection() as conn:
-        cursor = conn.execute(
-            """
-            UPDATE jobs
-            SET ray_job_id = ?, updated_at = ?
-            WHERE job_id = ?
-            """,
-            (ray_job_id, datetime.now(timezone.utc), job_id),
-        )
-        conn.commit()
-        return cursor.rowcount > 0
-
-
 def update_job_status(job_id: str, status: str, error: Optional[str] = None) -> bool:
     """Update job status and optionally error message. Returns True if updated."""
     with get_connection() as conn:
