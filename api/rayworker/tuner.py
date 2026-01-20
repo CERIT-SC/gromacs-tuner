@@ -19,9 +19,9 @@ from api.config import RAY_ADDRESS, RUNTIME_WORKDIR
 from api.db import init_db
 from api.db.operations import (
     create_job,
+    create_trial_result,
     get_completed_config_hashes,
     get_job,
-    try_claim_trial,
     update_job_config,
     update_job_status,
     update_trial_result,
@@ -53,21 +53,16 @@ def _ensure_ray_initialized() -> None:
         logger.info("Connected to Ray cluster at %s", RAY_ADDRESS)
 
 
-@ray.remote
+@ray.remote(max_retries=3)
 def _run_single_trial(
     job_id: str,
     tpr_path: str,
+    trial_id: str,
     config: TrialConfig,
     cfg_hash: str,
     extra_args: str,
 ) -> Dict[str, Any]:
-    """
-    Execute a single GROMACS trial on a Ray worker.
-
-    Returns the result dict; DB writes happen on the head node.
-    """
-    trial_id = str(uuid.uuid4())[:8]
-
+    """Execute a single GROMACS trial on a Ray worker."""
     logger.info(
         "Running trial %s: ntomp=%d, np=%d, nb=%s, pme=%s",
         trial_id,
@@ -135,23 +130,32 @@ def _run_tuning_async(
             update_job_status(job_id, JobStatus.TERMINATED)
             return
 
-        # Submit trials with resource requirements
-        futures = [
-            _run_single_trial.options(num_cpus=cfg.num_cpus, num_gpus=cfg.num_gpus).remote(
-                job_id, tpr_path, cfg, cfg_hash, extra_args
-            )
-            for cfg, cfg_hash in pending_configs
-        ]
+        trial_configs: List[Tuple[str, TrialConfig, str]] = []
+        for cfg, cfg_hash in pending_configs:
+            trial_id = str(uuid.uuid4())[:8]
+            create_trial_result(job_id, trial_id, tpr_hash, cfg, cfg_hash, JobStatus.PENDING, None)
+            trial_configs.append((trial_id, cfg, cfg_hash))
 
-        # Process results as they complete
-        results = ray.get(futures)
-        for result in results:
-            if result is None:
-                continue
-            # Write to DB from head node (safe for SQLite)
-            config = TrialConfig.from_dict(result["config"])
-            if try_claim_trial(job_id, result["trial_id"], tpr_hash, config, result["cfg_hash"]):
-                update_trial_result(tpr_hash, result["cfg_hash"], result["status"], result["performance"])
+        future_to_hash: Dict[ray.ObjectRef, str] = {}
+        for trial_id, cfg, cfg_hash in trial_configs:
+            future = _run_single_trial.options(num_cpus=cfg.num_cpus, num_gpus=cfg.num_gpus).remote(
+                job_id, tpr_path, trial_id, cfg, cfg_hash, extra_args
+            )
+            future_to_hash[future] = cfg_hash
+            # Mark as RUNNING once submitted to Ray (on head node where DB is accessible)
+            update_trial_result(tpr_hash, cfg_hash, JobStatus.RUNNING, None)
+
+        pending_futures = list(future_to_hash.keys())
+        while pending_futures:
+            done, pending_futures = ray.wait(pending_futures, num_returns=1)
+            cfg_hash = future_to_hash[done[0]]
+            try:
+                res: Dict[str, Any] = ray.get(done[0])
+                if res:
+                    update_trial_result(tpr_hash, res["cfg_hash"], res["status"], res["performance"])
+            except Exception as e:
+                logger.warning("Trial with config %s failed: %s", cfg_hash, e)
+                update_trial_result(tpr_hash, cfg_hash, JobStatus.ERROR, None)
 
         logger.info("All trials completed for job %s", job_id)
         update_job_status(job_id, JobStatus.TERMINATED)
@@ -216,7 +220,7 @@ def cancel_job(job_id: str) -> bool:
     return True
 
 
-def sync_job_status(job_id: str) -> Optional[str]:
+def sync_job_status(job_id: str) -> Optional[JobStatus]:
     """
     Sync job status - checks if background thread is still running.
 

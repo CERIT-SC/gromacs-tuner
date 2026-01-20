@@ -122,18 +122,16 @@ def delete_job(job_id: str) -> bool:
 # =============================================================================
 
 
-def try_claim_trial(
+def create_trial_result(
     job_id: str,
     trial_id: str,
     tpr_hash: str,
     config: TrialConfig,
     config_hash: str,
+    status: JobStatus,
+    performance: Optional[float],
 ) -> bool:
-    """
-    Atomically claim a trial config. Returns True if claimed, False if already exists.
-
-    This prevents race conditions when multiple jobs try to run the same config.
-    """
+    """Create a trial result. Returns True if created, False if already exists."""
     try:
         with get_connection() as conn:
             conn.execute(
@@ -141,12 +139,11 @@ def try_claim_trial(
                 INSERT INTO trials (job_id, trial_id, tpr_hash, config_hash, config_json, status, performance)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (job_id, trial_id, tpr_hash, config_hash, json.dumps(config.to_dict()), JobStatus.RUNNING, None),
+                (job_id, trial_id, tpr_hash, config_hash, json.dumps(config.to_dict()), status, performance),
             )
             conn.commit()
             return True
     except sqlite3.IntegrityError:
-        # Unique constraint violation means it's already claimed
         return False
 
 
