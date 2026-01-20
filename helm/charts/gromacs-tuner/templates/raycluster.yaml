@@ -53,6 +53,7 @@ spec:
 
           volumeMounts:
             - { mountPath: /tmp/ray, name: ray-logs }
+            - { mountPath: /tmp/tpr, name: gromacs-tuner-pvc }
             - { mountPath: /data,    name: gromacs-tuner-pvc }
 
           resources:

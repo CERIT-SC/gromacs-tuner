@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import secrets
 import shutil
@@ -6,7 +5,7 @@ import uuid
 import zipfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Annotated, Any, Dict, List, Optional, cast
+from typing import Annotated, Any, Dict, Optional
 
 import yaml
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
@@ -15,11 +14,18 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from api.config import MAX_UPLOAD_SIZE, POD_NAMESPACE, STATUS_QUERY_TIMEOUT, TPR_DIR, TUNER_PASSWORD, TUNER_USER
-from api.db.operations import delete_incomplete_trials_by_job_id, get_all_job_ids
-from api.rayworker import TuneStatusActor, run_custom_tuning, run_replica_exchange_tuning, run_tuning
-from api.schemas import JobStatus, JobStatusResponse
-from api.utils import cleanup_tmp_files, find_valid_replica_dirs
+from api.config import MAX_UPLOAD_SIZE, TPR_DIR, TUNER_PASSWORD, TUNER_USER
+from api.db.operations import (
+    delete_incomplete_trials_by_job_id,
+    delete_job,
+    get_job,
+    get_jobs_by_status,
+    get_trials_by_job_id,
+    get_trials_by_tpr_hash,
+)
+from api.rayworker import cancel_job, submit_tuning_job, sync_job_status
+from api.schemas import JobStatus, JobStatusResponse, TrialResponse
+from api.utils import cleanup_tmp_files, get_cluster_status
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -57,20 +63,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-status_actor: Any = None
-
-
-def get_status_actor() -> Any:  # noqa
-    """Get or create the global Ray status actor."""
-    global status_actor
-    if status_actor is None:
-        status_actor = TuneStatusActor.options(
-            name=f"{POD_NAMESPACE}_gromacs_tuner_status",
-            get_if_exists=True,
-            lifetime="detached",
-        ).remote()
-    return status_actor
 
 
 def _write_upload_to_disk(upload_file: UploadFile, destination: Path) -> None:
@@ -111,53 +103,18 @@ async def create_tuner_run(
 
     job_id = str(uuid.uuid4())
     cleanup_tmp_files(job_id)
-    actor = get_status_actor()
-    job_ref = run_tuning.remote(job_id, str(file_path), actor)
-    actor.register_job_task.remote(job_id, job_ref)
+
+    try:
+        submit_tuning_job(job_id, str(file_path), job_type="standard")
+    except Exception as e:
+        logger.exception("Failed to submit tuning job %s", job_id)
+        raise HTTPException(status_code=500, detail=f"Failed to submit job: {e}")
 
     logger.info("Started tuning job %s", job_id)
     return APIResponse(
         success=True,
         data={"tuner_run_id": job_id, "status": JobStatus.PENDING},
         message="Tuning job started",
-    )
-
-
-@app.post("/api/replica_exchange")
-async def run_replica_exchange(
-    _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)],
-    file: Annotated[UploadFile, File()],
-) -> APIResponse:
-    """Start a replica exchange run with a .zip file containing replica directories."""
-    if file.size and file.size > MAX_UPLOAD_SIZE:
-        raise HTTPException(status_code=413, detail=f"File size exceeds limit of {MAX_UPLOAD_SIZE} bytes")
-
-    if not file.filename or not file.filename.endswith(".zip"):
-        raise HTTPException(status_code=400, detail="Only .zip files are accepted for replica exchange")
-
-    job_id = str(uuid.uuid4())
-    cleanup_tmp_files(job_id)
-
-    base_path = TPR_DIR / job_id
-    base_path.mkdir(parents=True, exist_ok=True)
-
-    zip_path = base_path / "input.zip"
-    await run_in_threadpool(_write_upload_to_disk, file, zip_path)
-    await run_in_threadpool(_extract_zip, zip_path, base_path)
-
-    replica_dirs = find_valid_replica_dirs(base_path)
-    if not replica_dirs:
-        raise HTTPException(status_code=400, detail="No valid replica directories with .tpr files found")
-
-    actor = get_status_actor()
-    job_ref = run_replica_exchange_tuning.remote(job_id, str(base_path), replica_dirs, actor)
-    actor.register_job_task.remote(job_id, job_ref)
-
-    logger.info("Started replica exchange job %s with %d replicas", job_id, len(replica_dirs))
-    return APIResponse(
-        success=True,
-        data={"tuner_run_id": job_id, "status": JobStatus.PENDING, "replica_count": len(replica_dirs)},
-        message="Replica exchange job started",
     )
 
 
@@ -168,26 +125,57 @@ async def get_status(
 ) -> APIResponse:
     """Get the status of a tuning job including trial results."""
     logger.info("Fetching status for job %s", job_id)
-    actor = get_status_actor()
-    try:
-        result: Optional[JobStatusResponse] = await asyncio.wait_for(
-            actor.get_status.remote(job_id), timeout=STATUS_QUERY_TIMEOUT
-        )
-    except asyncio.TimeoutError:
-        logger.error("Timeout fetching status for job %s from Ray actor after %.1fs", job_id, STATUS_QUERY_TIMEOUT)
-        raise HTTPException(
-            status_code=504,
-            detail=f"Timeout fetching status for job '{job_id}' from Ray cluster. The cluster might be busy or scaling.",
-        )
-    except Exception:
-        logger.exception("Error fetching status for job %s", job_id)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Internal server error while fetching status for job '{job_id}'",
+
+    # Get job from database
+    job = await run_in_threadpool(get_job, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+
+    # Sync status with Ray (updates DB if needed)
+    await run_in_threadpool(sync_job_status, job_id)
+
+    # Refresh job data after sync
+    job = await run_in_threadpool(get_job, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+
+    # Get trials - prefer by tpr_hash if available, otherwise by job_id
+    tpr_hash = job.get("tpr_hash")
+    if tpr_hash:
+        trials_dict = await run_in_threadpool(get_trials_by_tpr_hash, tpr_hash)
+    else:
+        trials_dict = await run_in_threadpool(get_trials_by_job_id, job_id)
+
+    # Build summary and trial list
+    summary = {status.value: 0 for status in JobStatus}
+    trials = []
+
+    for trial_id, trial in trials_dict.items():
+        summary[trial.status] = summary.get(trial.status, 0) + 1
+        trials.append(
+            TrialResponse(
+                id=trial_id,
+                status=trial.status,
+                ntomp=trial.config.ntomp,
+                np=trial.config.np,
+                nb=trial.config.nb,
+                pme=trial.config.pme,
+                performance=trial.performance,
+                type=trial.config.type,
+            )
         )
 
-    if not result:
-        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+    # Get cluster resources
+    cluster_resources = await run_in_threadpool(get_cluster_status)
+
+    result = JobStatusResponse(
+        tuner_run_id=job_id,
+        job_status=job.get("status", JobStatus.UNKNOWN),
+        summary=summary,
+        trials=trials,
+        cluster_resources=cluster_resources,
+        error=job.get("error"),
+    )
 
     logger.info("Retrieved status for job %s", job_id)
     return APIResponse(
@@ -224,9 +212,12 @@ async def run_custom_single_endpoint(
 
     job_id = str(uuid.uuid4())
     cleanup_tmp_files(job_id)
-    actor = get_status_actor()
-    job_ref = run_custom_tuning.remote(job_id, str(file_path), actor, extra_args)  # type: ignore[call-arg]
-    actor.register_job_task.remote(job_id, job_ref)
+
+    try:
+        submit_tuning_job(job_id, str(file_path), job_type="custom", extra_args=extra_args)
+    except Exception as e:
+        logger.exception("Failed to submit custom job %s", job_id)
+        raise HTTPException(status_code=500, detail=f"Failed to submit job: {e}")
 
     logger.info("Started custom job %s", job_id)
     return APIResponse(
@@ -242,20 +233,9 @@ async def delete_tuner_run(
     _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)],
 ) -> APIResponse:
     """Delete a tuning run by job ID."""
-    deleted_db_rows = 0
-    cancelled_actor_tasks = False
-    deleted_actor_state = False
-    try:
-        actor = get_status_actor()
-        cancelled_actor_tasks = bool(await actor.cancel_job.remote(job_id))
-        deleted_db_rows = await run_in_threadpool(delete_incomplete_trials_by_job_id, job_id)
-        deleted_actor_state = bool(await actor.delete_job.remote(job_id))
-    except Exception:
-        logger.exception("Failed to delete job %s from status actor", job_id)
-
-    cleanup_tmp_files(job_id)
-
-    if deleted_db_rows == 0 and not deleted_actor_state and not cancelled_actor_tasks:
+    # Check if job exists
+    job = await run_in_threadpool(get_job, job_id)
+    if not job:
         raise HTTPException(
             status_code=404,
             detail={
@@ -264,12 +244,28 @@ async def delete_tuner_run(
             },
         )
 
+    # Cancel the Ray job if running
+    cancelled = await run_in_threadpool(cancel_job, job_id)
+
+    # Delete incomplete trials from database
+    deleted_db_rows = await run_in_threadpool(delete_incomplete_trials_by_job_id, job_id)
+
+    # Delete job record from database
+    deleted_job = await run_in_threadpool(delete_job, job_id)
+
+    # Clean up temporary files
+    cleanup_tmp_files(job_id)
+
+    logger.info(
+        "Deleted job %s: cancelled=%s, db_rows=%d, job_deleted=%s", job_id, cancelled, deleted_db_rows, deleted_job
+    )
+
     return APIResponse(
         success=True,
         data={
             "tuner_run_id": job_id,
             "deleted_db_rows": deleted_db_rows,
-            "deleted_actor_state": deleted_actor_state,
+            "cancelled": cancelled,
         },
         message="Tuning job deleted",
     )
@@ -289,9 +285,10 @@ async def health_check() -> APIResponse:
 async def list_tuner_runs(
     _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)],
 ) -> APIResponse:
-    """List all active tuning runs."""
-    actor = get_status_actor()
-    job_ids = cast("List[str]", await actor.get_all_job_ids.remote())
+    """List all active tuning runs (PENDING or RUNNING)."""
+    active_statuses = [JobStatus.PENDING.value, JobStatus.RUNNING.value]
+    jobs = await run_in_threadpool(get_jobs_by_status, active_statuses)
+    job_ids = [job["job_id"] for job in jobs]
     return APIResponse(
         success=True,
         data={"active_jobs": job_ids},
@@ -304,11 +301,13 @@ async def list_completed_jobs(
     _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)],
 ) -> APIResponse:
     """List all completed jobs from the database."""
-    jobs = get_all_job_ids()
+    completed_statuses = [JobStatus.TERMINATED.value, JobStatus.ERROR.value]
+    jobs = await run_in_threadpool(get_jobs_by_status, completed_statuses)
+    job_ids = [job["job_id"] for job in jobs]
 
     return APIResponse(
         success=True,
-        data={"completed_jobs": jobs},
+        data={"completed_jobs": job_ids},
         message="Completed jobs listed",
     )
 

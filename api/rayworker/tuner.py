@@ -1,23 +1,37 @@
-"""GROMACS tuning orchestration using grid search."""
+"""
+GROMACS tuning orchestration using Ray workers.
+
+Implements distributed hyperparameter search by launching GROMACS trials
+as Ray remote tasks and coordinating them from the API layer. The module:
+- Uses Ray for parallel execution and basic retry handling
+- Tracks jobs and trials in the database for status and result management
+- Performs a simple grid-style search over TrialConfig parameters
+"""
 
 import logging
 import sys
+import threading
 import uuid
-from pathlib import Path
-from typing import Any, List
+from typing import Any, Dict, List, Optional, Tuple
 
 import ray
 
-from api.config import MAX_CPU, MAX_GPU, NTOMP_OPTIONS
+from api.config import RAY_ADDRESS, RUNTIME_WORKDIR
 from api.db import init_db
 from api.db.operations import (
+    create_job,
+    create_trial_result,
     get_completed_config_hashes,
-    try_claim_trial,
+    get_job,
+    update_job_config,
+    update_job_status,
     update_trial_result,
 )
-from api.gromacs import TrialConfig, run_mdrun, run_replica_exchange
+from api.gromacs import TrialConfig, run_mdrun
 from api.schemas import JobStatus
 from api.utils import sha256_of_file
+
+RAY_RUNTIME_ENV = {"working_dir": RUNTIME_WORKDIR}
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -28,56 +42,81 @@ logger.addHandler(handler)
 init_db()
 logger.info("Tuner module initialized")
 
+# Store active tuning threads for status tracking
+_active_jobs: Dict[str, threading.Thread] = {}
+_job_lock = threading.Lock()
 
-@ray.remote
+
+def _ensure_ray_initialized() -> None:
+    """Initialize Ray connection if not already connected."""
+    if not ray.is_initialized():
+        ray.init(address=RAY_ADDRESS, runtime_env=RAY_RUNTIME_ENV, ignore_reinit_error=True)
+        logger.info("Connected to Ray cluster at %s", RAY_ADDRESS)
+
+
+@ray.remote(max_retries=3)
 def _run_single_trial(
     job_id: str,
     tpr_path: str,
-    tpr_hash: str,
+    trial_id: str,
     config: TrialConfig,
     cfg_hash: str,
-    status_actor: Any,  # noqa
-    extra_args: str = "",
-) -> None:
-    """Execute a single GROMACS trial."""
-    trial_id = str(uuid.uuid4())[:8]
-
-    # Atomic claim - prevents race conditions
-    if not try_claim_trial(job_id, trial_id, tpr_hash, config, cfg_hash):
-        logger.info("Config %s already claimed, skipping", cfg_hash)
-        return
-
-    status_actor.update_trial.remote(job_id, trial_id, config, JobStatus.RUNNING)
+    extra_args: str,
+) -> Dict[str, Any]:
+    """Execute a single GROMACS trial on a Ray worker."""
+    logger.info(
+        "Running trial %s: ntomp=%d, np=%d, nb=%s, pme=%s",
+        trial_id,
+        config.ntomp,
+        config.np,
+        config.nb,
+        config.pme,
+    )
 
     performance = run_mdrun(config, tpr_path, trial_id, job_id, extra_args)
-
     status = JobStatus.TERMINATED if performance > 0 else JobStatus.ERROR
-    update_trial_result(tpr_hash, cfg_hash, status, performance)
-    status_actor.update_trial.remote(job_id, trial_id, config, status, performance)
+
+    logger.info(
+        "Trial %s completed: status=%s, performance=%.2f ns/day",
+        trial_id,
+        status,
+        performance or 0.0,
+    )
+
+    return {
+        "trial_id": trial_id,
+        "cfg_hash": cfg_hash,
+        "config": config.to_dict(),
+        "status": status,
+        "performance": performance,
+    }
 
 
-@ray.remote
-def run_tuning(
+def _run_tuning_async(
     job_id: str,
     tpr_path: str,
-    status_actor: Any,  # noqa
+    extra_args: str = "",
 ) -> None:
     """
-    Run grid search tuning for GROMACS.
+    Run grid search tuning in a background thread.
 
-    Generates all valid configs, skips already-completed ones, and runs the rest.
+    All DB writes happen here (on the API/head node).
     """
     try:
+        _ensure_ray_initialized()
+
         tpr_hash = sha256_of_file(tpr_path)
         all_configs = TrialConfig.generate_all_configs()
         completed_hashes = get_completed_config_hashes(tpr_hash)
 
-        ray.get(status_actor.register_job.remote(job_id, tpr_hash, len(all_configs)))
+        # Update job metadata
+        update_job_config(job_id, tpr_hash, len(all_configs))
+        update_job_status(job_id, JobStatus.RUNNING)
 
-        pending_configs = [(cfg, cfg.hash) for cfg in all_configs if cfg.hash not in completed_hashes]
-
-        if pending_configs:
-            status_actor.register_pending_trials.remote(job_id, pending_configs)
+        # Filter out already-completed configs
+        pending_configs: List[Tuple[TrialConfig, str]] = [
+            (cfg, cfg.hash) for cfg in all_configs if cfg.hash not in completed_hashes
+        ]
 
         logger.info(
             "Job %s: %d total configs, %d cached, %d to run",
@@ -89,98 +128,125 @@ def run_tuning(
 
         if not pending_configs:
             logger.info("All configs already cached for job %s", job_id)
-            ray.get(status_actor.complete_job.remote(job_id))
+            update_job_status(job_id, JobStatus.TERMINATED)
             return
 
-        futures = [
-            _run_single_trial.options(num_cpus=cfg.num_cpus, num_gpus=cfg.num_gpus).remote(
-                job_id, tpr_path, tpr_hash, cfg, cfg_hash, status_actor
+        trial_configs: List[Tuple[str, TrialConfig, str]] = []
+        for cfg, cfg_hash in pending_configs:
+            trial_id = str(uuid.uuid4())[:8]
+            create_trial_result(job_id, trial_id, tpr_hash, cfg, cfg_hash, JobStatus.PENDING, None)
+            trial_configs.append((trial_id, cfg, cfg_hash))
+
+        future_to_hash: Dict[ray.ObjectRef, str] = {}
+        for trial_id, cfg, cfg_hash in trial_configs:
+            future = _run_single_trial.options(num_cpus=cfg.num_cpus, num_gpus=cfg.num_gpus).remote(
+                job_id, tpr_path, trial_id, cfg, cfg_hash, extra_args
             )
-            for cfg, cfg_hash in pending_configs
-        ]
+            future_to_hash[future] = cfg_hash
+            # Mark as RUNNING once submitted to Ray (on head node where DB is accessible)
+            update_trial_result(tpr_hash, cfg_hash, JobStatus.RUNNING, None)
 
-        status_actor.register_trial_tasks.remote(job_id, futures)
+        pending_futures = list(future_to_hash.keys())
+        while pending_futures:
+            done, pending_futures = ray.wait(pending_futures, num_returns=1)
+            cfg_hash = future_to_hash[done[0]]
+            try:
+                res: Dict[str, Any] = ray.get(done[0])
+                if res:
+                    update_trial_result(tpr_hash, res["cfg_hash"], res["status"], res["performance"])
+                else:
+                    logger.warning("Trial with config %s returned no result", cfg_hash)
+                    update_trial_result(tpr_hash, cfg_hash, JobStatus.ERROR, None)
+            except Exception as e:
+                logger.warning("Trial with config %s failed: %s", cfg_hash, e)
+                update_trial_result(tpr_hash, cfg_hash, JobStatus.ERROR, None)
 
-        ray.get(futures)
-        ray.get(status_actor.complete_job.remote(job_id))
+        logger.info("All trials completed for job %s", job_id)
+        update_job_status(job_id, JobStatus.TERMINATED)
 
     except Exception as e:
-        logger.exception("Job %s failed", job_id)
-        ray.get(status_actor.fail_job.remote(job_id, f"Tuning failed: {e}"))
+        logger.exception("Tuning job %s failed", job_id)
+        update_job_status(job_id, JobStatus.ERROR, str(e))
+
+    finally:
+        with _job_lock:
+            _active_jobs.pop(job_id, None)
 
 
-@ray.remote
-def run_custom_tuning(
+def submit_tuning_job(
     job_id: str,
     tpr_path: str,
-    status_actor: Any,  # noqa
+    job_type: str = "standard",
     extra_args: str = "",
-) -> None:
-    """Run tuning with custom extra arguments."""
-    try:
-        tpr_hash = sha256_of_file(tpr_path)
-        all_configs = TrialConfig.generate_all_configs()
-        completed_hashes = get_completed_config_hashes(tpr_hash)
+) -> str:
+    """
+    Submit a GROMACS tuning job.
 
-        ray.get(status_actor.register_job.remote(job_id, tpr_hash, len(all_configs)))
+    Runs grid search in a background thread so the API can return immediately.
+    Returns the job_id.
+    """
+    # Create job record in database
+    create_job(job_id, job_type, tpr_path, extra_args if extra_args else None)
 
-        pending_configs = [(cfg, cfg.hash) for cfg in all_configs if cfg.hash not in completed_hashes]
+    # Start tuning in background thread
+    thread = threading.Thread(
+        target=_run_tuning_async,
+        args=(job_id, tpr_path, extra_args),
+        daemon=True,
+    )
 
-        if pending_configs:
-            status_actor.register_pending_trials.remote(job_id, pending_configs)
+    with _job_lock:
+        _active_jobs[job_id] = thread
 
-        if not pending_configs:
-            ray.get(status_actor.complete_job.remote(job_id))
-            return
+    thread.start()
+    logger.info("Submitted tuning job %s", job_id)
 
-        futures = [
-            _run_single_trial.options(num_cpus=cfg.num_cpus, num_gpus=cfg.num_gpus).remote(
-                job_id,
-                tpr_path,
-                tpr_hash,
-                cfg,
-                cfg_hash,
-                status_actor,
-                extra_args,  # type: ignore[call-arg]
-            )
-            for cfg, cfg_hash in pending_configs
-        ]
-
-        status_actor.register_trial_tasks.remote(job_id, futures)
-
-        ray.get(futures)
-        ray.get(status_actor.complete_job.remote(job_id))
-
-    except Exception as e:
-        logger.exception("Custom job %s failed", job_id)
-        ray.get(status_actor.fail_job.remote(job_id, f"Custom tuning failed: {e}"))
+    return job_id
 
 
-@ray.remote(num_cpus=MAX_CPU, num_gpus=MAX_GPU)
-def run_replica_exchange_tuning(
-    job_id: str,
-    base_path: str,
-    replica_dirs: List[str],
-    status_actor: Any,  # noqa
-) -> None:
-    """Run replica exchange with different ntomp values."""
-    try:
-        ray.get(status_actor.register_job.remote(job_id, "", len(NTOMP_OPTIONS)))
-        base_dir = Path(base_path)
+def cancel_job(job_id: str) -> bool:
+    """Cancel a running tuning job."""
+    job = get_job(job_id)
+    if not job:
+        logger.warning("Cannot cancel: job %s not found", job_id)
+        return False
 
-        for ntomp in NTOMP_OPTIONS:
-            trial_id = f"rep_{ntomp}"
-            config = TrialConfig(ntomp=ntomp, type="replica_exchange")
+    # Mark as cancelled
+    update_job_status(job_id, JobStatus.ERROR, "Cancelled by user")
+    logger.info("Marked job %s as cancelled", job_id)
+    return True
 
-            status_actor.update_trial.remote(job_id, trial_id, config, JobStatus.RUNNING)
 
-            performance = run_replica_exchange(replica_dirs, base_dir, ntomp, trial_id, job_id)
+def sync_job_status(job_id: str) -> Optional[JobStatus]:
+    """
+    Sync job status - checks if background thread is still running.
 
-            status = JobStatus.TERMINATED if performance > 0 else JobStatus.ERROR
-            status_actor.update_trial.remote(job_id, trial_id, config, status, performance)
+    Returns the current status.
+    """
+    job = get_job(job_id)
+    if not job:
+        return None
 
-        ray.get(status_actor.complete_job.remote(job_id))
+    db_status = job.get("status")
 
-    except Exception as e:
-        logger.exception("Replica exchange job %s failed", job_id)
-        ray.get(status_actor.fail_job.remote(job_id, f"Replica exchange failed: {e}"))
+    # If job is in terminal state, return it
+    if db_status in (JobStatus.TERMINATED, JobStatus.ERROR):
+        return db_status
+
+    # Check if thread is still running
+    with _job_lock:
+        thread = _active_jobs.get(job_id)
+        if thread and thread.is_alive():
+            return JobStatus.RUNNING
+
+    # Thread finished but status not updated - something went wrong
+    if db_status == JobStatus.RUNNING:
+        update_job_status(job_id, JobStatus.ERROR, "Job thread terminated unexpectedly")
+        return JobStatus.ERROR
+
+    # Job is PENDING but no thread exists - thread creation likely failed
+    if db_status == JobStatus.PENDING:
+        update_job_status(job_id, JobStatus.ERROR, "Job failed to start - no active thread")
+        return JobStatus.ERROR
+
+    return db_status

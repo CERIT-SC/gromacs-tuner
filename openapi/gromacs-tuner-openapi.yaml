@@ -64,7 +64,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SuccessResponseWithMessage"
+                $ref: "#/components/schemas/SuccessResponseWithDeleteInfo"
 
   /tuner_runs/{job_id}/status:
     get:
@@ -85,34 +85,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SuccessResponseWithStatus"
-
-  /replica_exchange:
-    post:
-      summary: Submit a replica exchange job via ZIP.
-      description: Accepts a `.zip` archive containing replica directories with `md.tpr` files.
-      security:
-        - basicAuth: []
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              properties:
-                file:
-                  type: string
-                  format: binary
-                  description: ZIP archive with replica directories.
-                additional_args:
-                  type: string
-                  description: Additional arguments to pass to GROMACS.
-      responses:
-        "200":
-          description: Replica exchange job started.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SuccessResponseWithReplica"
 
   /custom_run:
     post:
@@ -163,7 +135,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SuccessResponseWithMessage"
+                $ref: "#/components/schemas/SuccessResponseWithHealth"
 
 components:
   securitySchemes:
@@ -180,7 +152,7 @@ components:
         data:
           type: object
           properties:
-            job_id:
+            tuner_run_id:
               type: string
             status:
               type: string
@@ -198,19 +170,14 @@ components:
         data:
           type: object
           properties:
-            job_id:
+            tuner_run_id:
+              type: string
+            status:
               type: string
             summary:
               type: object
-              properties:
-                RUNNING:
-                  type: integer
-                PENDING:
-                  type: integer
-                TERMINATED:
-                  type: integer
-                ERROR:
-                  type: integer
+              additionalProperties:
+                type: integer
             trials:
               type: array
               items:
@@ -231,15 +198,21 @@ components:
                   performance:
                     type: number
                     nullable: true
+                  type:
+                    type: string
+                    nullable: true
             cluster_resources:
               type: string
+            error:
+              type: string
+              nullable: true
         message:
           type: string
         error:
           type: object
           nullable: true
 
-    SuccessResponseWithMessage:
+    SuccessResponseWithHealth:
       type: object
       properties:
         success:
@@ -249,6 +222,26 @@ components:
           properties:
             status:
               type: string
+        message:
+          type: string
+        error:
+          type: object
+          nullable: true
+
+    SuccessResponseWithDeleteInfo:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            tuner_run_id:
+              type: string
+            deleted_db_rows:
+              type: integer
+            cancelled:
+              type: boolean
         message:
           type: string
         error:
@@ -285,26 +278,6 @@ components:
               type: array
               items:
                 type: string
-        message:
-          type: string
-        error:
-          type: object
-          nullable: true
-
-    SuccessResponseWithReplica:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          type: object
-          properties:
-            job_id:
-              type: string
-            status:
-              type: string
-            replica_count:
-              type: integer
         message:
           type: string
         error:
