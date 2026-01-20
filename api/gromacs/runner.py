@@ -14,6 +14,8 @@ from api.utils import tail
 
 logger = logging.getLogger(__name__)
 
+STALE_FILE_HANDLE_ERRNO = 116
+
 
 def run_mdrun(
     config: TrialConfig,
@@ -40,16 +42,7 @@ def run_mdrun(
     stdout_log = trial_dir / "stdout.log"
     stderr_log = trial_dir / "stderr.log"
 
-    try:
-        with stdout_log.open("w") as out, stderr_log.open("w") as err:
-            subprocess.run(cmd, stdout=out, stderr=err, text=True, check=True, env=env, cwd=trial_dir)
-    except subprocess.CalledProcessError as e:
-        logger.error("GROMACS failed with code %d for trial %s", e.returncode, trial_id)
-        if stderr_log.exists():
-            logger.error("GROMACS stderr:\n%s", tail(stderr_log, n=20))
-        return 0.0
-    except Exception:
-        logger.exception("GROMACS execution failed for trial %s", trial_id)
+    if not _run_command_with_logs(cmd, stdout_log, stderr_log, env, trial_dir, f"Trial {trial_id}"):
         return 0.0
 
     return _parse_performance(stdout_log, stderr_log)
@@ -121,14 +114,7 @@ def run_replica_exchange(
     stdout_log = trial_dir / "stdout.log"
     stderr_log = trial_dir / "stderr.log"
 
-    try:
-        with stdout_log.open("w") as out, stderr_log.open("w") as err:
-            subprocess.run(cmd, stdout=out, stderr=err, text=True, cwd=base_path, check=True, env=env)
-    except subprocess.CalledProcessError as e:
-        logger.error("Replica exchange failed with code %d", e.returncode)
-        return 0.0
-    except Exception:
-        logger.exception("Replica exchange execution failed")
+    if not _run_command_with_logs(cmd, stdout_log, stderr_log, env, base_path, "Replica exchange"):
         return 0.0
 
     return _parse_replica_performance(base_path)
@@ -143,3 +129,31 @@ def _parse_replica_performance(base_path: Path) -> float:
         if match:
             perf_values.append(float(match.group(1)))
     return max(perf_values) if perf_values else 0.0
+
+
+def _run_command_with_logs(
+    cmd: List[str],
+    stdout_log: Path,
+    stderr_log: Path,
+    env: dict,
+    cwd: Path,
+    context: str,
+) -> bool:
+    """Run a subprocess command with log redirection and consistent error handling."""
+    try:
+        with stdout_log.open("w") as out, stderr_log.open("w") as err:
+            subprocess.run(cmd, stdout=out, stderr=err, text=True, check=True, env=env, cwd=cwd)
+        return True
+    except subprocess.CalledProcessError as e:
+        logger.error("%s failed with code %d", context, e.returncode)
+        if stderr_log.exists():
+            logger.error("GROMACS stderr:\n%s", tail(stderr_log, n=20))
+    except OSError as e:
+        if e.errno == STALE_FILE_HANDLE_ERRNO:
+            logger.info("%s logs removed while job was deleted; skipping error", context)
+        else:
+            logger.exception("%s failed", context)
+    except Exception:
+        logger.exception("%s failed", context)
+
+    return False
