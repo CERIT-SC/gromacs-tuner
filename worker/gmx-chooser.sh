@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # GROMACS SIMD architecture chooser
 # Automatically selects the best GROMACS binary based on CPU capabilities
 # Sets PATH to point to the appropriate /gromacs/<arch>/bin directory

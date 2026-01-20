@@ -153,6 +153,9 @@ def _run_tuning_async(
                 res: Dict[str, Any] = ray.get(done[0])
                 if res:
                     update_trial_result(tpr_hash, res["cfg_hash"], res["status"], res["performance"])
+                else:
+                    logger.warning("Trial with config %s returned no result", cfg_hash)
+                    update_trial_result(tpr_hash, cfg_hash, JobStatus.ERROR, None)
             except Exception as e:
                 logger.warning("Trial with config %s failed: %s", cfg_hash, e)
                 update_trial_result(tpr_hash, cfg_hash, JobStatus.ERROR, None)
@@ -174,7 +177,7 @@ def submit_tuning_job(
     tpr_path: str,
     job_type: str = "standard",
     extra_args: str = "",
-    replica_dirs: Optional[List[str]] = None,  # noqa: ARG001
+    replica_dirs: Optional[List[str]] = None,
 ) -> str:
     """
     Submit a GROMACS tuning job.
@@ -182,6 +185,10 @@ def submit_tuning_job(
     Runs grid search in a background thread so the API can return immediately.
     Returns the job_id.
     """
+    # Validate replica_dirs - not implemented yet
+    if replica_dirs is not None:
+        raise NotImplementedError("Replica exchange tuning is not yet implemented")
+
     # Create job record in database
     create_job(job_id, job_type, tpr_path, extra_args if extra_args else None)
 

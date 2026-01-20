@@ -3,7 +3,7 @@
 import json
 import logging
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
 
 from api.db.models import get_connection
@@ -45,7 +45,7 @@ def update_job_ray_id(job_id: str, ray_job_id: str) -> bool:
             SET ray_job_id = ?, updated_at = ?
             WHERE job_id = ?
             """,
-            (ray_job_id, datetime.now(), job_id),
+            (ray_job_id, datetime.now(timezone.utc), job_id),
         )
         conn.commit()
         return cursor.rowcount > 0
@@ -60,7 +60,7 @@ def update_job_status(job_id: str, status: str, error: Optional[str] = None) -> 
             SET status = ?, error = ?, updated_at = ?
             WHERE job_id = ?
             """,
-            (status, error, datetime.now(), job_id),
+            (status, error, datetime.now(timezone.utc), job_id),
         )
         conn.commit()
         return cursor.rowcount > 0
@@ -75,7 +75,7 @@ def update_job_config(job_id: str, tpr_hash: str, total_configs: int) -> bool:
             SET tpr_hash = ?, total_configs = ?, updated_at = ?
             WHERE job_id = ?
             """,
-            (tpr_hash, total_configs, datetime.now(), job_id),
+            (tpr_hash, total_configs, datetime.now(timezone.utc), job_id),
         )
         conn.commit()
         return cursor.rowcount > 0

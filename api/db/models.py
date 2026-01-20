@@ -9,10 +9,9 @@ from api.config import DB_PATH
 
 @contextmanager
 def get_connection() -> Generator[sqlite3.Connection, None, None]:
-    """Get a database connection with WAL mode for concurrent access."""
+    """Get a database connection with concurrent access settings."""
     conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30.0)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=30000")
     try:
         yield conn
@@ -25,6 +24,9 @@ def init_db() -> None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     with get_connection() as conn:
+        # Enable WAL mode for better concurrent access (persists per-database)
+        conn.execute("PRAGMA journal_mode=WAL")
+
         # Jobs table for tracking tuning jobs
         conn.execute("""
             CREATE TABLE IF NOT EXISTS jobs (

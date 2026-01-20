@@ -1,5 +1,6 @@
 """GROMACS mdrun execution."""
 
+import errno
 import logging
 import os
 import re
@@ -13,8 +14,6 @@ from api.gromacs.config import TrialConfig
 from api.utils import tail
 
 logger = logging.getLogger(__name__)
-
-STALE_FILE_HANDLE_ERRNO = 116
 
 
 def run_mdrun(
@@ -149,7 +148,7 @@ def _run_command_with_logs(
         if stderr_log.exists():
             logger.error("GROMACS stderr:\n%s", tail(stderr_log, n=20))
     except OSError as e:
-        if e.errno == STALE_FILE_HANDLE_ERRNO:
+        if e.errno == errno.ESTALE:
             logger.info("%s logs removed while job was deleted; skipping error", context)
         else:
             logger.exception("%s failed", context)

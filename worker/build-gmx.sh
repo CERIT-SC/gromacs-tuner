@@ -32,13 +32,13 @@ done
 ARCHDIR=$ARCH
 [ "$DOUBLE" = 'ON' ] && ARCHDIR=${ARCHDIR}_d
 [ "$RDTSCP" = 'ON' ] && ARCHDIR=${ARCHDIR}_ts
-BUILDIR=gromacs_build_$ARCHDIR
+BUILDDIR=gromacs_build_$ARCHDIR
 
 set -x
-mkdir -p "$BUILDIR" || exit 1
+mkdir -p "$BUILDDIR" || exit 1
 SRC=$(realpath "$SRC")
 
-cd "$BUILDIR"
+cd "$BUILDDIR"
 CC=gcc CXX=g++ cmake "$SRC" \
     -DGMX_OPENMP=ON \
     -DGMX_GPU=$GPU \
