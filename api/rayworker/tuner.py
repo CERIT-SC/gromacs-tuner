@@ -254,4 +254,9 @@ def sync_job_status(job_id: str) -> Optional[JobStatus]:
         update_job_status(job_id, JobStatus.ERROR, "Job thread terminated unexpectedly")
         return JobStatus.ERROR
 
+    # Job is PENDING but no thread exists - thread creation likely failed
+    if db_status == JobStatus.PENDING:
+        update_job_status(job_id, JobStatus.ERROR, "Job failed to start - no active thread")
+        return JobStatus.ERROR
+
     return db_status
