@@ -11,10 +11,7 @@ TUNER_PASSWORD = os.getenv("TUNER_PASSWORD", "gromacs123")
 MAX_CPU = int(os.getenv("MAX_CPU", "32"))
 MAX_GPU = int(os.getenv("MAX_GPU", "1"))
 
-POD_NAMESPACE = os.getenv("POD_NAMESPACE", "default")
-
 RAY_ADDRESS = os.getenv("RAY_ADDRESS", "ray://raycluster-complete-head-svc:10001")
-RAY_DASHBOARD_ADDRESS = os.getenv("RAY_DASHBOARD_ADDRESS", "http://raycluster-complete-head-svc:8265")
 
 NTOMP_OPTIONS = [1, 2, 4]
 NP_OPTIONS = [1, 2, 4]
@@ -23,6 +20,7 @@ PME_OPTIONS = ["cpu", "gpu"]
 
 MAX_UPLOAD_SIZE = 10 * 1024**3  # 10 GB
 
-STATUS_QUERY_TIMEOUT = float(os.getenv("STATUS_QUERY_TIMEOUT", "15.0"))
-
-RUNTIME_WORKDIR = str(Path(__file__).resolve().parent.parent)
+RUNTIME_WORKDIR = os.getenv(
+    "RUNTIME_WORKDIR",
+    str(Path(__file__).resolve().parent.parent),
+)

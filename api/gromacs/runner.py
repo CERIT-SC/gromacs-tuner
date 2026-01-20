@@ -76,58 +76,8 @@ def _build_command(config: TrialConfig, tpr_path: str) -> List[str]:
 def _parse_performance(stdout_log: Path, stderr_log: Path) -> float:
     """Parse performance (ns/day) from GROMACS output."""
     output = tail(stdout_log, n=50) + tail(stderr_log, n=50)
-    match = re.search(r"Performance:\s+(\d+\.?\d*)", output)
+    match = re.search(r"Performance:\\s+(\\d+\\.?\\d*)", output)
     return float(match.group(1)) if match else 0.0
-
-
-def run_replica_exchange(
-    replica_dirs: List[str],
-    base_path: Path,
-    ntomp: int,
-    trial_id: str,
-    job_id: str,
-) -> float:
-    """Run replica exchange MD and return best performance."""
-    trial_dir = JOBS_DIR / job_id / trial_id
-    trial_dir.mkdir(parents=True, exist_ok=True)
-
-    env = os.environ.copy()
-    env["OMP_NUM_THREADS"] = str(ntomp)
-
-    cmd = [
-        "mpirun",
-        "-np",
-        str(len(replica_dirs)),
-        "gmx",
-        "mdrun",
-        "-deffnm",
-        "md",
-        "-multidir",
-        *replica_dirs,
-        "-replex",
-        "100",
-        "-ntomp",
-        str(ntomp),
-    ]
-
-    stdout_log = trial_dir / "stdout.log"
-    stderr_log = trial_dir / "stderr.log"
-
-    if not _run_command_with_logs(cmd, stdout_log, stderr_log, env, base_path, "Replica exchange"):
-        return 0.0
-
-    return _parse_replica_performance(base_path)
-
-
-def _parse_replica_performance(base_path: Path) -> float:
-    """Parse performance from all replica logs and return the best."""
-    perf_values = []
-    for log_path in base_path.glob("rep_*/md.log"):
-        output = tail(log_path, n=50)
-        match = re.search(r"Performance:\s+(\d+\.?\d*)", output)
-        if match:
-            perf_values.append(float(match.group(1)))
-    return max(perf_values) if perf_values else 0.0
 
 
 def _run_command_with_logs(

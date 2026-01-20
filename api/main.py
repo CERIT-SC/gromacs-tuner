@@ -25,7 +25,7 @@ from api.db.operations import (
 )
 from api.rayworker import cancel_job, submit_tuning_job, sync_job_status
 from api.schemas import JobStatus, JobStatusResponse, TrialResponse
-from api.utils import cleanup_tmp_files, find_valid_replica_dirs, get_cluster_status
+from api.utils import cleanup_tmp_files, get_cluster_status
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -115,51 +115,6 @@ async def create_tuner_run(
         success=True,
         data={"tuner_run_id": job_id, "status": JobStatus.PENDING},
         message="Tuning job started",
-    )
-
-
-@app.post("/api/replica_exchange")
-async def run_replica_exchange(
-    _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)],
-    file: Annotated[UploadFile, File()],
-) -> APIResponse:
-    """Start a replica exchange run with a .zip file containing replica directories."""
-    if file.size and file.size > MAX_UPLOAD_SIZE:
-        raise HTTPException(status_code=413, detail=f"File size exceeds limit of {MAX_UPLOAD_SIZE} bytes")
-
-    if not file.filename or not file.filename.endswith(".zip"):
-        raise HTTPException(status_code=400, detail="Only .zip files are accepted for replica exchange")
-
-    job_id = str(uuid.uuid4())
-    cleanup_tmp_files(job_id)
-
-    base_path = TPR_DIR / job_id
-    base_path.mkdir(parents=True, exist_ok=True)
-
-    zip_path = base_path / "input.zip"
-    await run_in_threadpool(_write_upload_to_disk, file, zip_path)
-    await run_in_threadpool(_extract_zip, zip_path, base_path)
-
-    replica_dirs = find_valid_replica_dirs(base_path)
-    if not replica_dirs:
-        raise HTTPException(status_code=400, detail="No valid replica directories with .tpr files found")
-
-    try:
-        submit_tuning_job(
-            job_id,
-            str(base_path),
-            job_type="replica_exchange",
-            replica_dirs=replica_dirs,
-        )
-    except Exception as e:
-        logger.exception("Failed to submit replica exchange job %s", job_id)
-        raise HTTPException(status_code=500, detail=f"Failed to submit job: {e}")
-
-    logger.info("Started replica exchange job %s with %d replicas", job_id, len(replica_dirs))
-    return APIResponse(
-        success=True,
-        data={"tuner_run_id": job_id, "status": JobStatus.PENDING, "replica_count": len(replica_dirs)},
-        message="Replica exchange job started",
     )
 
 

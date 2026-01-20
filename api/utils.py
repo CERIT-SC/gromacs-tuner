@@ -8,7 +8,7 @@ import threading
 import time
 from collections import deque
 from pathlib import Path
-from typing import List, Union
+from typing import Union
 
 import ray
 from ray.exceptions import RaySystemError
@@ -39,13 +39,6 @@ def cleanup_tmp_files(job_id: str, directory: Path = TPR_DIR) -> None:
             logger.info("Deleted trial directory: %s", trial_job_dir)
         except OSError:
             logger.exception("Failed to delete %s", trial_job_dir)
-
-
-def find_valid_replica_dirs(base_path: Union[Path, str]) -> List[str]:
-    """Find subdirectories containing .tpr files."""
-    base = Path(base_path)
-    valid_dirs = [entry.name for entry in base.iterdir() if entry.is_dir() and any(entry.glob("*.tpr"))]
-    return sorted(valid_dirs)
 
 
 def sha256_of_file(path: Union[Path, str]) -> str:

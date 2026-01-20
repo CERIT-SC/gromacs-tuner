@@ -1,10 +1,11 @@
 """
-GROMACS tuning orchestration via Ray Tune.
+GROMACS tuning orchestration using Ray workers.
 
-Uses Ray Tune for hyperparameter optimization with:
-- Automatic trial scheduling and resource management
-- Fault tolerance and checkpointing
-- Clean separation: API runs tune, workers execute GROMACS
+Implements distributed hyperparameter search by launching GROMACS trials
+as Ray remote tasks and coordinating them from the API layer. The module:
+- Uses Ray for parallel execution and basic retry handling
+- Tracks jobs and trials in the database for status and result management
+- Performs a simple grid-style search over TrialConfig parameters
 """
 
 import logging
@@ -177,7 +178,6 @@ def submit_tuning_job(
     tpr_path: str,
     job_type: str = "standard",
     extra_args: str = "",
-    replica_dirs: Optional[List[str]] = None,
 ) -> str:
     """
     Submit a GROMACS tuning job.
@@ -185,18 +185,8 @@ def submit_tuning_job(
     Runs grid search in a background thread so the API can return immediately.
     Returns the job_id.
     """
-    # Validate replica_dirs - not implemented yet
-    if replica_dirs is not None:
-        raise NotImplementedError("Replica exchange tuning is not yet implemented")
-
     # Create job record in database
     create_job(job_id, job_type, tpr_path, extra_args if extra_args else None)
-
-    if job_type == "replica_exchange":
-        # TODO: Implement replica exchange tuning
-        logger.warning("Replica exchange not yet implemented")
-        update_job_status(job_id, JobStatus.ERROR, "Replica exchange not implemented")
-        return job_id
 
     # Start tuning in background thread
     thread = threading.Thread(

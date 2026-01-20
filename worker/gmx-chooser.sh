@@ -7,7 +7,7 @@ unset double
 unset rdtscp
 unset arch
 
-FLAGS=$(cat /proc/cpuinfo | grep ^flags | head -1)
+FLAGS=$(grep -m 1 '^flags' /proc/cpuinfo)
 
 # Initialize PATH_LENGTH to track original PATH (avoid infinite growth)
 if [ -z "$PATH_LENGTH" ]; then
