@@ -12,7 +12,7 @@ import logging
 import sys
 import threading
 import uuid
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import ray
 
@@ -43,7 +43,7 @@ init_db()
 logger.info("Tuner module initialized")
 
 # Store active tuning threads for status tracking
-_active_jobs: Dict[str, threading.Thread] = {}
+_active_jobs: dict[str, threading.Thread] = {}
 _job_lock = threading.Lock()
 
 
@@ -62,7 +62,7 @@ def _run_single_trial(
     config: TrialConfig,
     cfg_hash: str,
     extra_args: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Execute a single GROMACS trial on a Ray worker."""
     logger.info(
         "Running trial %s: ntomp=%d, np=%d, nb=%s, pme=%s",
@@ -114,7 +114,7 @@ def _run_tuning_async(
         update_job_status(job_id, JobStatus.RUNNING)
 
         # Filter out already-completed configs
-        pending_configs: List[Tuple[TrialConfig, str]] = [
+        pending_configs: list[tuple[TrialConfig, str]] = [
             (cfg, cfg.hash) for cfg in all_configs if cfg.hash not in completed_hashes
         ]
 
@@ -131,13 +131,13 @@ def _run_tuning_async(
             update_job_status(job_id, JobStatus.TERMINATED)
             return
 
-        trial_configs: List[Tuple[str, TrialConfig, str]] = []
+        trial_configs: list[tuple[str, TrialConfig, str]] = []
         for cfg, cfg_hash in pending_configs:
             trial_id = str(uuid.uuid4())[:8]
             create_trial_result(job_id, trial_id, tpr_hash, cfg, cfg_hash, JobStatus.PENDING, None)
             trial_configs.append((trial_id, cfg, cfg_hash))
 
-        future_to_hash: Dict[ray.ObjectRef, str] = {}
+        future_to_hash: dict[ray.ObjectRef, str] = {}
         for trial_id, cfg, cfg_hash in trial_configs:
             future = _run_single_trial.options(num_cpus=cfg.num_cpus, num_gpus=cfg.num_gpus).remote(
                 job_id, tpr_path, trial_id, cfg, cfg_hash, extra_args
@@ -151,7 +151,7 @@ def _run_tuning_async(
             done, pending_futures = ray.wait(pending_futures, num_returns=1)
             cfg_hash = future_to_hash[done[0]]
             try:
-                res: Dict[str, Any] = ray.get(done[0])
+                res: dict[str, Any] = ray.get(done[0])
                 if res:
                     update_trial_result(tpr_hash, res["cfg_hash"], res["status"], res["performance"])
                 else:
@@ -217,7 +217,7 @@ def cancel_job(job_id: str) -> bool:
     return True
 
 
-def sync_job_status(job_id: str) -> Optional[JobStatus]:
+def sync_job_status(job_id: str) -> str | None:
     """
     Sync job status - checks if background thread is still running.
 
@@ -227,7 +227,7 @@ def sync_job_status(job_id: str) -> Optional[JobStatus]:
     if not job:
         return None
 
-    db_status = job.get("status")
+    db_status = str(job.get("status", ""))
 
     # If job is in terminal state, return it
     if db_status in (JobStatus.TERMINATED, JobStatus.ERROR):

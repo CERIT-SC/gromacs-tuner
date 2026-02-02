@@ -1,10 +1,11 @@
+# check=skip=UndefinedVar
 # =============================================================================
 # GROMACS + Ray Worker Image
 # Multi-stage build: GROMACS with PLUMED and LibTorch on Ray CUDA base
 # =============================================================================
 
-ARG RAY_VERSION=2.42.1
-ARG RAY_IMAGE=rayproject/ray:${RAY_VERSION}-py39-cu124
+ARG RAY_VERSION=2.53.0
+ARG RAY_IMAGE=rayproject/ray:${RAY_VERSION}-py312-gpu
 
 # =============================================================================
 # Stage 1: Builder - Compile GROMACS with PLUMED support
@@ -110,6 +111,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     rsync \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
+
+# Install Python dependencies for worker
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt && rm /tmp/requirements.txt
 
 COPY --from=builder /build/libtorch/lib/* /usr/local/lib/
 

@@ -9,7 +9,6 @@ import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from pathlib import Path
-from typing import Dict, Tuple, Union
 
 import ray
 from ray.exceptions import RaySystemError
@@ -42,7 +41,7 @@ def cleanup_tmp_files(job_id: str, directory: Path = TPR_DIR) -> None:
             logger.exception("Failed to delete %s", trial_job_dir)
 
 
-def sha256_of_file(path: Union[Path, str]) -> str:
+def sha256_of_file(path: Path | str) -> str:
     """Calculate SHA256 hash of a file."""
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
@@ -73,7 +72,7 @@ def get_cluster_status() -> str:
                 return _cluster_status_cache["status"]
 
             # Run Ray calls in a separate thread with a timeout
-            def _fetch() -> Tuple[Dict[str, float], Dict[str, float]]:
+            def _fetch() -> tuple[dict[str, float], dict[str, float]]:
                 return ray.cluster_resources(), ray.available_resources()
 
             future = _status_executor.submit(_fetch)
@@ -100,7 +99,7 @@ def get_cluster_status() -> str:
             return _cluster_status_cache["status"]
 
 
-def tail(file: Union[Path, str], n: int = 10) -> str:
+def tail(file: Path | str, n: int = 10) -> str:
     """Read last n lines of a file efficiently by reading chunks from the end."""
     file_path = Path(file) if isinstance(file, str) else file
     with file_path.open("rb") as f:

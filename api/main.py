@@ -1,18 +1,18 @@
 import logging
 import secrets
 import shutil
-import sqlite3
 import uuid
 import zipfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Annotated, Any, Dict, Optional
+from typing import Annotated, Any
 
 import yaml
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
+from sqlalchemy.exc import OperationalError
 from starlette.concurrency import run_in_threadpool
 
 from api.config import MAX_UPLOAD_SIZE, TPR_DIR, TUNER_PASSWORD, TUNER_USER
@@ -40,9 +40,9 @@ class APIResponse(BaseModel):
     """Standard API response wrapper."""
 
     success: bool
-    data: Dict[str, Any] = {}
+    data: dict[str, Any] = {}
     message: str = ""
-    error: Optional[Dict[str, str]] = None
+    error: dict[str, str] | None = None
 
 
 app = FastAPI(title="GROMACS Tuner API")
@@ -144,10 +144,10 @@ async def get_status(
         # Get trials - prefer by tpr_hash if available, otherwise by job_id
         tpr_hash = job.get("tpr_hash")
         if tpr_hash:
-            trials_dict = await run_in_threadpool(get_trials_by_tpr_hash, tpr_hash)
+            trials_dict = await run_in_threadpool(get_trials_by_tpr_hash, str(tpr_hash))
         else:
             trials_dict = await run_in_threadpool(get_trials_by_job_id, job_id)
-    except sqlite3.OperationalError as e:
+    except OperationalError as e:
         logger.error("Database timeout while fetching status for job %s: %s", job_id, e)
         raise HTTPException(
             status_code=503,
@@ -178,11 +178,11 @@ async def get_status(
 
     result = JobStatusResponse(
         tuner_run_id=job_id,
-        job_status=job.get("status", JobStatus.UNKNOWN),
+        job_status=str(job.get("status", JobStatus.UNKNOWN)),
         summary=summary,
         trials=trials,
         cluster_resources=cluster_resources,
-        error=job.get("error"),
+        error=str(job["error"]) if job.get("error") else None,
     )
 
     logger.info("Retrieved status for job %s", job_id)
@@ -297,7 +297,7 @@ async def list_tuner_runs(
     active_statuses = [JobStatus.PENDING.value, JobStatus.RUNNING.value]
     try:
         jobs = await run_in_threadpool(get_jobs_by_status, active_statuses)
-    except sqlite3.OperationalError:
+    except OperationalError:
         raise HTTPException(status_code=503, detail="Database is busy. Please try again later.")
 
     job_ids = [job["job_id"] for job in jobs]
@@ -316,7 +316,7 @@ async def list_completed_jobs(
     completed_statuses = [JobStatus.TERMINATED.value, JobStatus.ERROR.value]
     try:
         jobs = await run_in_threadpool(get_jobs_by_status, completed_statuses)
-    except sqlite3.OperationalError:
+    except OperationalError:
         raise HTTPException(status_code=503, detail="Database is busy. Please try again later.")
 
     job_ids = [job["job_id"] for job in jobs]
@@ -329,7 +329,7 @@ async def list_completed_jobs(
 
 
 @app.get("/openapi.json", include_in_schema=False)
-def custom_openapi() -> Dict[str, Any]:
+def custom_openapi() -> dict[str, Any]:
     """Return custom OpenAPI specification."""
     openapi_path = Path("openapi/gromacs-tuner-openapi.yaml")
     with openapi_path.open() as f:

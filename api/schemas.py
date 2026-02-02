@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from api.gromacs.config import TrialConfig
 
@@ -23,7 +23,7 @@ class TrialInfo:
 
     config: TrialConfig
     status: str
-    performance: Optional[float] = None
+    performance: float | None = None
 
 
 @dataclass
@@ -33,8 +33,8 @@ class JobInfo:
     tpr_hash: str
     total: int
     status: str = JobStatus.RUNNING
-    trials: Dict[str, TrialInfo] = field(default_factory=dict)
-    error: Optional[str] = None
+    trials: dict[str, TrialInfo] = field(default_factory=dict)
+    error: str | None = None
 
 
 @dataclass
@@ -47,8 +47,8 @@ class TrialResponse:
     np: int
     nb: str
     pme: str
-    performance: Optional[float]
-    type: Optional[str] = None
+    performance: float | None
+    type: str | None = None
 
 
 @dataclass
@@ -57,12 +57,12 @@ class JobStatusResponse:
 
     tuner_run_id: str
     job_status: str
-    summary: Dict[str, int]
-    trials: List[TrialResponse]
+    summary: dict[str, int]
+    trials: list[TrialResponse]
     cluster_resources: str
-    error: Optional[str] = None
+    error: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for API response."""
         result = {
             "tuner_run_id": self.tuner_run_id,
