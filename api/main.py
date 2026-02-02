@@ -142,9 +142,9 @@ async def get_status(
             raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
 
         # Get trials - prefer by tpr_hash if available, otherwise by job_id
-        tpr_hash = job.get("tpr_hash")
+        tpr_hash = job.tpr_hash
         if tpr_hash:
-            trials_dict = await run_in_threadpool(get_trials_by_tpr_hash, str(tpr_hash))
+            trials_dict = await run_in_threadpool(get_trials_by_tpr_hash, tpr_hash)
         else:
             trials_dict = await run_in_threadpool(get_trials_by_job_id, job_id)
     except OperationalError as e:
@@ -178,11 +178,11 @@ async def get_status(
 
     result = JobStatusResponse(
         tuner_run_id=job_id,
-        job_status=str(job.get("status", JobStatus.UNKNOWN)),
+        job_status=job.status,
         summary=summary,
         trials=trials,
         cluster_resources=cluster_resources,
-        error=str(job["error"]) if job.get("error") else None,
+        error=job.error,
     )
 
     logger.info("Retrieved status for job %s", job_id)
@@ -300,10 +300,9 @@ async def list_tuner_runs(
     except OperationalError:
         raise HTTPException(status_code=503, detail="Database is busy. Please try again later.")
 
-    job_ids = [job["job_id"] for job in jobs]
     return APIResponse(
         success=True,
-        data={"active_jobs": job_ids},
+        data={"active_jobs": [job.job_id for job in jobs]},
         message="Active jobs listed",
     )
 
@@ -319,11 +318,9 @@ async def list_completed_jobs(
     except OperationalError:
         raise HTTPException(status_code=503, detail="Database is busy. Please try again later.")
 
-    job_ids = [job["job_id"] for job in jobs]
-
     return APIResponse(
         success=True,
-        data={"completed_jobs": job_ids},
+        data={"completed_jobs": [job.job_id for job in jobs]},
         message="Completed jobs listed",
     )
 

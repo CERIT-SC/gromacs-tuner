@@ -227,7 +227,7 @@ def sync_job_status(job_id: str) -> str | None:
     if not job:
         return None
 
-    db_status = str(job.get("status", ""))
+    db_status = job.status
 
     # If job is in terminal state, return it
     if db_status in (JobStatus.TERMINATED, JobStatus.ERROR):

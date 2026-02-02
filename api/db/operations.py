@@ -2,7 +2,6 @@
 
 import logging
 from datetime import datetime, timezone
-from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -64,51 +63,18 @@ def update_job_config(job_id: str, tpr_hash: str, total_configs: int) -> bool:
         return True
 
 
-def get_job(job_id: str) -> dict[str, Any] | None:
+def get_job(job_id: str) -> Job | None:
     """Get job record by ID."""
     with get_session() as session:
-        job = session.execute(select(Job).where(Job.job_id == job_id)).scalar_one_or_none()
-        if not job:
-            return None
-        return {
-            "id": job.id,
-            "job_id": job.job_id,
-            "ray_job_id": job.ray_job_id,
-            "job_type": job.job_type,
-            "tpr_hash": job.tpr_hash,
-            "tpr_path": job.tpr_path,
-            "total_configs": job.total_configs,
-            "status": job.status,
-            "error": job.error,
-            "extra_args": job.extra_args,
-            "created_at": job.created_at,
-            "updated_at": job.updated_at,
-        }
+        return session.execute(select(Job).where(Job.job_id == job_id)).scalar_one_or_none()
 
 
-def get_jobs_by_status(statuses: list[str]) -> list[dict[str, Any]]:
+def get_jobs_by_status(statuses: list[str]) -> list[Job]:
     """Get all jobs with the given statuses."""
     if not statuses:
         return []
     with get_session() as session:
-        jobs = session.execute(select(Job).where(Job.status.in_(statuses))).scalars().all()
-        return [
-            {
-                "id": job.id,
-                "job_id": job.job_id,
-                "ray_job_id": job.ray_job_id,
-                "job_type": job.job_type,
-                "tpr_hash": job.tpr_hash,
-                "tpr_path": job.tpr_path,
-                "total_configs": job.total_configs,
-                "status": job.status,
-                "error": job.error,
-                "extra_args": job.extra_args,
-                "created_at": job.created_at,
-                "updated_at": job.updated_at,
-            }
-            for job in jobs
-        ]
+        return list(session.execute(select(Job).where(Job.status.in_(statuses))).scalars().all())
 
 
 def delete_job(job_id: str) -> bool:
@@ -175,7 +141,7 @@ def get_trials_by_tpr_hash(tpr_hash: str) -> dict[str, TrialInfo]:
         trials = session.execute(select(Trial).where(Trial.tpr_hash == tpr_hash)).scalars().all()
         return {
             trial.trial_id: TrialInfo(
-                config=TrialConfig.from_dict(trial.config_json),
+                config=trial.config,
                 status=trial.status,
                 performance=trial.performance,
             )
@@ -202,7 +168,7 @@ def get_trials_by_job_id(job_id: str) -> dict[str, TrialInfo]:
         trials = session.execute(select(Trial).where(Trial.job_id == job_id)).scalars().all()
         return {
             trial.trial_id: TrialInfo(
-                config=TrialConfig.from_dict(trial.config_json),
+                config=trial.config,
                 status=trial.status,
                 performance=trial.performance,
             )

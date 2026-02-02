@@ -7,6 +7,7 @@ from sqlalchemy import JSON, Index, String, create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from api.config import DB_PATH
+from api.gromacs.config import TrialConfig
 
 
 class Base(DeclarativeBase):
@@ -36,6 +37,23 @@ class Job(Base):
         onupdate=lambda: datetime.now(timezone.utc),
     )
 
+    def to_dict(self) -> dict[str, Any]:
+        """Convert the job object to a dictionary."""
+        return {
+            "id": self.id,
+            "job_id": self.job_id,
+            "ray_job_id": self.ray_job_id,
+            "job_type": self.job_type,
+            "tpr_hash": self.tpr_hash,
+            "tpr_path": self.tpr_path,
+            "total_configs": self.total_configs,
+            "status": self.status,
+            "error": self.error,
+            "extra_args": self.extra_args,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
+
 
 class Trial(Base):
     """Trial model for tracking individual trial runs."""
@@ -56,6 +74,11 @@ class Trial(Base):
         Index("ix_tpr_config", "tpr_hash", "config_hash"),
         Index("uq_tpr_config", "tpr_hash", "config_hash", unique=True),
     )
+
+    @property
+    def config(self) -> TrialConfig:
+        """Get the TrialConfig from the JSON data."""
+        return TrialConfig.from_dict(self.config_json)
 
 
 def _set_sqlite_pragmas(dbapi_conn: object, _connection_record: object) -> None:
