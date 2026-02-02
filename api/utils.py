@@ -10,7 +10,6 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from pathlib import Path
 
 import ray
-from ray.exceptions import RaySystemError
 
 from api.config import JOBS_DIR, TPR_DIR
 
@@ -21,11 +20,12 @@ def cleanup_tmp_files(job_id: str, directory: Path = TPR_DIR) -> None:
     """Remove temporary files associated with a job ID."""
     for path in directory.glob(f"{job_id}*"):
         try:
-            if path.is_dir():
+            is_dir = path.is_dir()
+            if is_dir:
                 shutil.rmtree(path)
             else:
                 path.unlink()
-            logger.info("Deleted %s: %s", "directory" if path.is_dir() else "file", path)
+            logger.info("Deleted %s: %s", "directory" if is_dir else "file", path)
         except OSError:
             logger.exception("Failed to delete %s", path)
 
@@ -48,7 +48,7 @@ def sha256_of_file(path: Path | str, chunk_size: int = 8192) -> str:
 
 
 _cluster_status_cache = {"status": "N/A", "time": 0.0}
-_cluster_status_lock = ThreadPoolExecutor(max_workers=1)
+_cluster_status_executor = ThreadPoolExecutor(max_workers=1)
 CLUSTER_STATUS_TTL = 10.0
 RAY_FETCH_TIMEOUT = 4.0
 
@@ -67,12 +67,12 @@ def get_cluster_status() -> str:
             used_cpu = int(total.get("CPU", 0) - avail.get("CPU", 0))
             used_gpu = int(total.get("GPU", 0) - avail.get("GPU", 0))
             return f"{used_cpu}/{int(total.get('CPU', 0))} CPUs, {used_gpu}/{int(total.get('GPU', 0))} GPUs used"
-        except (RaySystemError, Exception) as e:
+        except Exception as e:
             logger.exception("Error fetching cluster status: %s", e)
             return _cluster_status_cache["status"]
 
     try:
-        status = _cluster_status_lock.submit(_fetch).result(timeout=RAY_FETCH_TIMEOUT)
+        status = _cluster_status_executor.submit(_fetch).result(timeout=RAY_FETCH_TIMEOUT)
     except TimeoutError:
         logger.warning("ray.cluster_resources() timed out after %.1fs", RAY_FETCH_TIMEOUT)
         _cluster_status_cache["time"] = time.time()

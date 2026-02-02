@@ -12,7 +12,7 @@ import yaml
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.exc import OperationalError
 from starlette.concurrency import run_in_threadpool
 
@@ -30,14 +30,13 @@ from api.schemas import JobStatus, JobStatusResponse, TrialResponse
 from api.utils import cleanup_tmp_files, get_cluster_status
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
 
 class APIResponse(BaseModel):
     """Standard API response wrapper."""
 
     success: bool
-    data: dict[str, Any] = {}
+    data: dict[str, Any] = Field(default_factory=dict)
     message: str = ""
     error: dict[str, str] | None = None
 
@@ -117,7 +116,8 @@ async def get_status(job_id: str, _: Annotated[HTTPBasicCredentials, Depends(ver
         logger.error("Database timeout for job %s: %s", job_id, e)
         raise HTTPException(status_code=503, detail="Database is busy. Please try again later.") from e
 
-    summary = Counter(t.status for t in trials_dict.values())
+    summary_counter = Counter(t.status for t in trials_dict.values())
+    summary = {status.value: summary_counter.get(status.value, 0) for status in JobStatus}
     trials = [
         TrialResponse(
             id=tid,

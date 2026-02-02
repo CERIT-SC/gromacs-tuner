@@ -1,7 +1,6 @@
 """GROMACS tuning orchestration using Ray workers."""
 
 import logging
-import sys
 import threading
 import uuid
 from typing import Any
@@ -25,9 +24,6 @@ from api.utils import sha256_of_file
 
 RAY_RUNTIME_ENV = {"working_dir": RUNTIME_WORKDIR}
 logger = logging.getLogger(__name__)
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", stream=sys.stdout
-)
 
 init_db()
 logger.info("Tuner module initialized")
