@@ -95,7 +95,8 @@ def _order_trial_configs(
     """Order configs to favor faster baseline trials and stable runs."""
     return sorted(
         trial_configs,
-        key=lambda item: (item[1].num_gpus, item[1].num_cpus, item[2]),
+        # Sort descending by GPUs and CPUs to establish a high baseline early
+        key=lambda item: (-item[1].num_gpus, -item[1].num_cpus, item[2]),
     )
 
 
