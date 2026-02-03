@@ -30,7 +30,6 @@ class TrialInfo:
 class JobInfo:
     """Information about a tuning job."""
 
-    tpr_hash: str
     total: int
     status: str = JobStatus.RUNNING
     trials: dict[str, TrialInfo] = field(default_factory=dict)

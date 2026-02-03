@@ -23,7 +23,6 @@ from api.db.operations import (
     get_job,
     get_jobs_by_status,
     get_trials_by_job_id,
-    get_trials_by_tpr_hash,
 )
 from api.rayworker import cancel_job, submit_tuning_job, sync_job_status
 from api.schemas import JobStatus, JobStatusResponse, TrialResponse
@@ -115,11 +114,7 @@ async def get_status(job_id: str, _: Annotated[HTTPBasicCredentials, Depends(ver
         if not job:
             raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
 
-        trials_dict = (
-            await run_in_threadpool(get_trials_by_tpr_hash, job.tpr_hash)
-            if job.tpr_hash
-            else await run_in_threadpool(get_trials_by_job_id, job_id)
-        )
+        trials_dict = await run_in_threadpool(get_trials_by_job_id, job_id)
     except OperationalError as e:
         logger.error("Database timeout for job %s: %s", job_id, e)
         raise HTTPException(status_code=503, detail="Database is busy. Please try again later.") from e

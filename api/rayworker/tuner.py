@@ -17,7 +17,6 @@ from api.db import init_db
 from api.db.operations import (
     create_job,
     create_trial_result,
-    get_completed_config_hashes,
     get_job,
     update_job_config,
     update_job_status,
@@ -25,7 +24,6 @@ from api.db.operations import (
 )
 from api.gromacs import TrialConfig, run_mdrun
 from api.schemas import JobStatus
-from api.utils import sha256_of_file
 
 RAY_RUNTIME_ENV = {"working_dir": RUNTIME_WORKDIR}
 logger = logging.getLogger(__name__)
@@ -106,7 +104,6 @@ def _submit_trials(
     job_id: str,
     tpr_path: str,
     extra_args: str,
-    tpr_hash: str,
     trials: list[TrialConfigEntry],
     nsteps: int,
     best_steps_per_sec: float,
@@ -125,13 +122,12 @@ def _submit_trials(
             best_steps_per_sec,  # type: ignore
         )
         future_to_hash[future] = cfg_hash
-        update_trial_result(tpr_hash, cfg_hash, JobStatus.RUNNING, None)
+        update_trial_result(cfg_hash, JobStatus.RUNNING, None)
     return future_to_hash
 
 
 def _process_trial_results(
     job_id: str,
-    tpr_hash: str,
     future_to_hash: dict[ray.ObjectRef, str],
     best_steps_per_sec: float,
 ) -> float:
@@ -148,7 +144,6 @@ def _process_trial_results(
                 early_stopped = res.get("early_stopped", False)
                 perf_value = None if early_stopped else res.get("performance")
                 update_trial_result(
-                    tpr_hash,
                     res.get("cfg_hash", cfg_hash),
                     res.get("status", JobStatus.ERROR),
                     perf_value,
@@ -159,10 +154,10 @@ def _process_trial_results(
                     logger.info("Job %s: New best steps/sec: %.1f", job_id, new_best)
             else:
                 logger.warning("Trial with config %s returned no result", cfg_hash)
-                update_trial_result(tpr_hash, cfg_hash, JobStatus.ERROR, None)
+                update_trial_result(cfg_hash, JobStatus.ERROR, None)
         except Exception as e:
             logger.warning("Trial with config %s failed: %s", cfg_hash, e)
-            update_trial_result(tpr_hash, cfg_hash, JobStatus.ERROR, None)
+            update_trial_result(cfg_hash, JobStatus.ERROR, None)
 
     return new_best
 
@@ -171,23 +166,15 @@ def _run_tuning_async(job_id: str, tpr_path: str, extra_args: str = "", nsteps: 
     """Run grid search tuning in a background thread with early stopping support."""
     try:
         _ensure_ray_initialized()
-        tpr_hash = sha256_of_file(tpr_path)
         all_configs = TrialConfig.generate_all_configs()
-        completed_hashes = get_completed_config_hashes(tpr_hash)
-        update_job_config(job_id, tpr_hash, len(all_configs))
+        update_job_config(job_id, len(all_configs))
         update_job_status(job_id, JobStatus.RUNNING)
 
-        pending_configs = [(cfg, cfg.hash) for cfg in all_configs if cfg.hash not in completed_hashes]
-        if not pending_configs:
-            logger.info("All configs already cached for job %s", job_id)
-            update_job_status(job_id, JobStatus.TERMINATED)
-            return
-
         trial_configs: list[TrialConfigEntry] = []
-        for cfg, cfg_hash in pending_configs:
+        for cfg in all_configs:
             trial_id = str(uuid.uuid4())[:8]
-            create_trial_result(job_id, trial_id, tpr_hash, cfg, cfg_hash, JobStatus.PENDING, None)
-            trial_configs.append((trial_id, cfg, cfg_hash))
+            create_trial_result(job_id, trial_id, cfg, cfg.hash, JobStatus.PENDING, None)
+            trial_configs.append((trial_id, cfg, cfg.hash))
 
         trial_configs = _order_trial_configs(trial_configs)
         best_steps_per_sec = 0.0
@@ -197,16 +184,14 @@ def _run_tuning_async(job_id: str, tpr_path: str, extra_args: str = "", nsteps: 
         remaining_trials = trial_configs[baseline_count:]
 
         if baseline_trials:
-            future_to_hash = _submit_trials(
-                job_id, tpr_path, extra_args, tpr_hash, baseline_trials, nsteps, best_steps_per_sec
-            )
-            best_steps_per_sec = _process_trial_results(job_id, tpr_hash, future_to_hash, best_steps_per_sec)
+            future_to_hash = _submit_trials(job_id, tpr_path, extra_args, baseline_trials, nsteps, best_steps_per_sec)
+            best_steps_per_sec = _process_trial_results(job_id, future_to_hash, best_steps_per_sec)
 
         batch_size = max(1, EARLY_STOP_BATCH_SIZE)
         for idx in range(0, len(remaining_trials), batch_size):
             batch = remaining_trials[idx : idx + batch_size]
-            future_to_hash = _submit_trials(job_id, tpr_path, extra_args, tpr_hash, batch, nsteps, best_steps_per_sec)
-            best_steps_per_sec = _process_trial_results(job_id, tpr_hash, future_to_hash, best_steps_per_sec)
+            future_to_hash = _submit_trials(job_id, tpr_path, extra_args, batch, nsteps, best_steps_per_sec)
+            best_steps_per_sec = _process_trial_results(job_id, future_to_hash, best_steps_per_sec)
 
         logger.info("All trials completed for job %s (best: %.1f steps/s)", job_id, best_steps_per_sec)
         update_job_status(job_id, JobStatus.TERMINATED)

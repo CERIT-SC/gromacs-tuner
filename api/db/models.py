@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import JSON, Index, String, create_engine, event
+from sqlalchemy import JSON, String, create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from api.config import DB_PATH
@@ -25,7 +25,6 @@ class Job(Base):
     job_id: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
     ray_job_id: Mapped[str | None] = mapped_column(String, nullable=True)
     job_type: Mapped[str] = mapped_column(String, nullable=False)
-    tpr_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     tpr_path: Mapped[str] = mapped_column(String, nullable=False)
     total_configs: Mapped[int] = mapped_column(default=0)
     status: Mapped[str] = mapped_column(String, nullable=False, index=True)
@@ -44,7 +43,6 @@ class Job(Base):
             "job_id": self.job_id,
             "ray_job_id": self.ray_job_id,
             "job_type": self.job_type,
-            "tpr_hash": self.tpr_hash,
             "tpr_path": self.tpr_path,
             "total_configs": self.total_configs,
             "status": self.status,
@@ -63,17 +61,11 @@ class Trial(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     job_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
     trial_id: Mapped[str] = mapped_column(String, nullable=False)
-    tpr_hash: Mapped[str] = mapped_column(String, nullable=False, index=True)
     config_hash: Mapped[str] = mapped_column(String, nullable=False)
     config_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False)
     performance: Mapped[float | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc))
-
-    __table_args__ = (
-        Index("ix_tpr_config", "tpr_hash", "config_hash"),
-        Index("uq_tpr_config", "tpr_hash", "config_hash", unique=True),
-    )
 
     @property
     def config(self) -> TrialConfig:
