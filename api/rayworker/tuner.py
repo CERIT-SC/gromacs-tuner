@@ -7,7 +7,12 @@ from typing import Any
 
 import ray
 
-from api.config import RAY_ADDRESS, RUNTIME_WORKDIR
+from api.config import (
+    EARLY_STOP_BASELINE_TRIALS,
+    EARLY_STOP_BATCH_SIZE,
+    RAY_ADDRESS,
+    RUNTIME_WORKDIR,
+)
 from api.db import init_db
 from api.db.operations import (
     create_job,
@@ -30,6 +35,9 @@ logger.info("Tuner module initialized")
 
 _active_jobs: dict[str, threading.Thread] = {}
 _job_lock = threading.Lock()
+
+TrialConfigEntry = tuple[str, TrialConfig, str]
+"""Represents a queued trial: (trial_id, trial_config, config_hash)."""
 
 
 def _ensure_ray_initialized() -> None:
@@ -59,8 +67,10 @@ def _run_single_trial(
         config.pme,
         best_steps_per_sec,
     )
-    performance, steps_per_sec = run_mdrun(config, tpr_path, trial_id, job_id, extra_args, best_steps_per_sec)
-    status = JobStatus.TERMINATED if performance > 0 else JobStatus.ERROR
+    performance, steps_per_sec, early_stopped = run_mdrun(
+        config, tpr_path, trial_id, job_id, extra_args, best_steps_per_sec
+    )
+    status = JobStatus.TERMINATED if performance > 0 or early_stopped else JobStatus.ERROR
     logger.info(
         "Trial %s completed: status=%s, performance=%.2f ns/day, steps/sec=%.1f",
         trial_id,
@@ -75,7 +85,43 @@ def _run_single_trial(
         "status": status,
         "performance": performance,
         "steps_per_sec": steps_per_sec,
+        "early_stopped": early_stopped,
     }
+
+
+def _order_trial_configs(
+    trial_configs: list[TrialConfigEntry],
+) -> list[TrialConfigEntry]:
+    """Order configs to favor faster baseline trials and stable runs."""
+    return sorted(
+        trial_configs,
+        key=lambda item: (item[1].num_gpus, item[1].num_cpus, item[2]),
+    )
+
+
+def _submit_trials(
+    job_id: str,
+    tpr_path: str,
+    extra_args: str,
+    tpr_hash: str,
+    trials: list[TrialConfigEntry],
+    best_steps_per_sec: float,
+) -> dict[ray.ObjectRef, str]:
+    """Submit a batch of trials to Ray and return futures map."""
+    future_to_hash: dict[ray.ObjectRef, str] = {}
+    for trial_id, cfg, cfg_hash in trials:
+        future = _run_single_trial.options(num_cpus=cfg.num_cpus, num_gpus=cfg.num_gpus).remote(
+            job_id,
+            tpr_path,
+            trial_id,
+            cfg,
+            cfg_hash,
+            extra_args,
+            best_steps_per_sec,  # type: ignore
+        )
+        future_to_hash[future] = cfg_hash
+        update_trial_result(tpr_hash, cfg_hash, JobStatus.RUNNING, None)
+    return future_to_hash
 
 
 def _process_trial_results(
@@ -94,14 +140,16 @@ def _process_trial_results(
         try:
             res: dict[str, Any] = ray.get(done[0])
             if res:
+                early_stopped = res.get("early_stopped", False)
+                perf_value = None if early_stopped else res.get("performance")
                 update_trial_result(
                     tpr_hash,
                     res.get("cfg_hash", cfg_hash),
                     res.get("status", JobStatus.ERROR),
-                    res.get("performance"),
+                    perf_value,
                 )
                 steps_per_sec = res.get("steps_per_sec", 0.0)
-                if steps_per_sec > new_best:
+                if steps_per_sec > new_best and not early_stopped:
                     new_best = steps_per_sec
                     logger.info("Job %s: New best steps/sec: %.1f", job_id, new_best)
             else:
@@ -130,49 +178,27 @@ def _run_tuning_async(job_id: str, tpr_path: str, extra_args: str = "") -> None:
             update_job_status(job_id, JobStatus.TERMINATED)
             return
 
-        trial_configs = []
+        trial_configs: list[TrialConfigEntry] = []
         for cfg, cfg_hash in pending_configs:
             trial_id = str(uuid.uuid4())[:8]
             create_trial_result(job_id, trial_id, tpr_hash, cfg, cfg_hash, JobStatus.PENDING, None)
             trial_configs.append((trial_id, cfg, cfg_hash))
 
+        trial_configs = _order_trial_configs(trial_configs)
         best_steps_per_sec = 0.0
-        initial_batch_size = min(3, len(trial_configs))
-        initial_batch = trial_configs[:initial_batch_size]
-        remaining_trials = trial_configs[initial_batch_size:]
 
-        # Phase 1: Establish baseline
-        if initial_batch:
-            future_to_hash = {}
-            for trial_id, cfg, cfg_hash in initial_batch:
-                future = _run_single_trial.options(num_cpus=cfg.num_cpus, num_gpus=cfg.num_gpus).remote(
-                    job_id,
-                    tpr_path,
-                    trial_id,
-                    cfg,
-                    cfg_hash,
-                    extra_args,
-                    0.0,  # type: ignore
-                )
-                future_to_hash[future] = cfg_hash
-                update_trial_result(tpr_hash, cfg_hash, JobStatus.RUNNING, None)
+        baseline_count = min(EARLY_STOP_BASELINE_TRIALS, len(trial_configs))
+        baseline_trials = trial_configs[:baseline_count]
+        remaining_trials = trial_configs[baseline_count:]
+
+        if baseline_trials:
+            future_to_hash = _submit_trials(job_id, tpr_path, extra_args, tpr_hash, baseline_trials, best_steps_per_sec)
             best_steps_per_sec = _process_trial_results(job_id, tpr_hash, future_to_hash, best_steps_per_sec)
 
-        # Phase 2: Run remaining with early stopping
-        if remaining_trials:
-            future_to_hash = {}
-            for trial_id, cfg, cfg_hash in remaining_trials:
-                future = _run_single_trial.options(num_cpus=cfg.num_cpus, num_gpus=cfg.num_gpus).remote(
-                    job_id,
-                    tpr_path,
-                    trial_id,
-                    cfg,
-                    cfg_hash,
-                    extra_args,
-                    best_steps_per_sec,  # type: ignore
-                )
-                future_to_hash[future] = cfg_hash
-                update_trial_result(tpr_hash, cfg_hash, JobStatus.RUNNING, None)
+        batch_size = max(1, EARLY_STOP_BATCH_SIZE)
+        for idx in range(0, len(remaining_trials), batch_size):
+            batch = remaining_trials[idx : idx + batch_size]
+            future_to_hash = _submit_trials(job_id, tpr_path, extra_args, tpr_hash, batch, best_steps_per_sec)
             best_steps_per_sec = _process_trial_results(job_id, tpr_hash, future_to_hash, best_steps_per_sec)
 
         logger.info("All trials completed for job %s (best: %.1f steps/s)", job_id, best_steps_per_sec)

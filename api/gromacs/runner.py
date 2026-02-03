@@ -32,7 +32,7 @@ def run_mdrun(
     job_id: str,
     extra_args: str = "",
     best_steps_per_sec: float = 0.0,
-) -> tuple[float, float]:
+) -> tuple[float, float, bool]:
     """
     Execute GROMACS mdrun with the given config and return performance.
 
@@ -45,7 +45,8 @@ def run_mdrun(
         best_steps_per_sec: Best steps/sec observed so far (for early stopping)
 
     Returns:
-        Tuple of (performance_ns_day, steps_per_sec). Returns (0.0, 0.0) on failure.
+        Tuple of (performance_ns_day, steps_per_sec, early_stopped).
+        Returns (0.0, 0.0, False) on failure.
     """
     trial_dir = JOBS_DIR / job_id / trial_id
     trial_dir.mkdir(parents=True, exist_ok=True)
@@ -64,17 +65,17 @@ def run_mdrun(
         cmd, stdout_log, stderr_log, env, trial_dir, f"Trial {trial_id}", best_steps_per_sec
     )
     if result is None:
-        return 0.0, 0.0
+        return 0.0, 0.0, False
 
     early_stopped, final_steps_per_sec = result
     if early_stopped:
         logger.info(
             "Trial %s early stopped (%.1f steps/s vs best %.1f)", trial_id, final_steps_per_sec, best_steps_per_sec
         )
-        return 0.0, final_steps_per_sec
+        return 0.0, final_steps_per_sec, True
 
     performance = _parse_performance(stdout_log, stderr_log)
-    return performance, final_steps_per_sec
+    return performance, final_steps_per_sec, False
 
 
 def _build_command(config: TrialConfig, tpr_path: str) -> list[str]:

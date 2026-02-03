@@ -26,6 +26,8 @@ EARLY_STOP_THRESHOLD = 0.65  # Stop if <65% of best trial
 EARLY_STOP_WARMUP_STEPS = 5000  # Steps before evaluating
 EARLY_STOP_WARMUP_SECONDS = 60.0  # Seconds before evaluating (fallback)
 EARLY_STOP_CHECK_INTERVAL = 10.0  # Seconds between checks
+EARLY_STOP_BASELINE_TRIALS = 3  # Initial trials to establish baseline
+EARLY_STOP_BATCH_SIZE = 6  # Parallel batch size for remaining trials
 
 RUNTIME_WORKDIR = os.getenv(
     "RUNTIME_WORKDIR",
