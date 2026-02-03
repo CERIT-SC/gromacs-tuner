@@ -119,9 +119,6 @@ def sanitize_extra_args(extra_args: str) -> str:
     """
     Validate and normalize extra GROMACS mdrun args.
 
-    This is used inside a shell script in the K8s job container, so we block
-    shell metacharacters and also forbid overriding critical args.
-
     Args:
         extra_args: Raw extra arguments string from user input.
 
@@ -135,7 +132,6 @@ def sanitize_extra_args(extra_args: str) -> str:
     if not extra_args:
         return ""
 
-    # Block shell metacharacters
     if _EXTRA_ARGS_FORBIDDEN_RE.search(extra_args):
         raise ValueError("extra_args contains forbidden characters: ; & | ` $ ( ) < >")
 
@@ -145,7 +141,6 @@ def sanitize_extra_args(extra_args: str) -> str:
     except ValueError as e:
         raise ValueError(f"Invalid extra_args: {e}") from e
 
-    # Check for forbidden flags (case-insensitive)
     lowered = {t.lower() for t in tokens}
     if lowered & _EXTRA_ARGS_FORBIDDEN_FLAGS:
         raise ValueError(

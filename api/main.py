@@ -84,7 +84,6 @@ async def create_tuner_run(
     file_path = TPR_DIR / f"{uuid.uuid4()}_md.tpr"
     await run_in_threadpool(_save_upload, file, file_path)
 
-    # Sanitize extra_args
     try:
         sanitized_args = sanitize_extra_args(extra_args)
     except (ValidationError, ValueError) as e:
@@ -165,7 +164,6 @@ async def run_custom_single_endpoint(
     """Run a custom GROMACS tuning job with extra arguments."""
     _validate_upload(file, ".zip")
 
-    # Sanitize extra_args
     try:
         sanitized_args = sanitize_extra_args(extra_args)
     except (ValidationError, ValueError) as e:
