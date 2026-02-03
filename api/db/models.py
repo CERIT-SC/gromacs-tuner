@@ -61,7 +61,6 @@ class Trial(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     job_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
     trial_id: Mapped[str] = mapped_column(String, nullable=False)
-    config_hash: Mapped[str] = mapped_column(String, nullable=False)
     config_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False)
     performance: Mapped[float | None] = mapped_column(nullable=True)

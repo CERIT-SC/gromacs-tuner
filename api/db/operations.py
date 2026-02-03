@@ -59,7 +59,6 @@ def create_trial_result(
     job_id: str,
     trial_id: str,
     config: TrialConfig,
-    config_hash: str,
     status: JobStatus,
     performance: float | None,
 ) -> bool:
@@ -69,7 +68,6 @@ def create_trial_result(
             Trial(
                 job_id=job_id,
                 trial_id=trial_id,
-                config_hash=config_hash,
                 config_json=config.to_dict(),
                 status=status,
                 performance=performance,

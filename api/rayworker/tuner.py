@@ -35,8 +35,8 @@ logger.info("Tuner module initialized")
 _active_jobs: dict[str, threading.Thread] = {}
 _job_lock = threading.Lock()
 
-TrialConfigEntry = tuple[str, TrialConfig, str]
-"""Represents a queued trial: (trial_id, trial_config, config_hash)."""
+TrialConfigEntry = tuple[str, TrialConfig]
+"""Represents a queued trial: (trial_id, trial_config)."""
 
 
 def _ensure_ray_initialized() -> None:
@@ -52,7 +52,6 @@ def _run_single_trial(
     tpr_path: str,
     trial_id: str,
     config: TrialConfig,
-    cfg_hash: str,
     extra_args: str,
     nsteps: int = 25_000,
     best_steps_per_sec: float = 0.0,
@@ -81,8 +80,6 @@ def _run_single_trial(
     )
     return {
         "trial_id": trial_id,
-        "cfg_hash": cfg_hash,
-        "config": config.to_dict(),
         "status": status,
         "performance": performance,
         "steps_per_sec": steps_per_sec,
@@ -97,7 +94,7 @@ def _order_trial_configs(
     return sorted(
         trial_configs,
         # Sort descending by GPUs and CPUs to establish a high baseline early
-        key=lambda item: (-item[1].num_gpus, -item[1].num_cpus, item[2]),
+        key=lambda item: (-item[1].num_gpus, -item[1].num_cpus),
     )
 
 
@@ -111,13 +108,12 @@ def _submit_trials(
 ) -> dict[ray.ObjectRef, str]:
     """Submit a batch of trials to Ray and return futures map."""
     future_to_trial: dict[ray.ObjectRef, str] = {}
-    for trial_id, cfg, cfg_hash in trials:
+    for trial_id, cfg in trials:
         future = _run_single_trial.options(num_cpus=cfg.num_cpus, num_gpus=cfg.num_gpus).remote(
             job_id,
             tpr_path,
             trial_id,
             cfg,
-            cfg_hash,
             extra_args,
             nsteps,  # type: ignore
             best_steps_per_sec,  # type: ignore
@@ -177,8 +173,8 @@ def _run_tuning_async(job_id: str, tpr_path: str, extra_args: str = "", nsteps: 
         trial_configs: list[TrialConfigEntry] = []
         for cfg in all_configs:
             trial_id = str(uuid.uuid4())[:8]
-            create_trial_result(job_id, trial_id, cfg, cfg.hash, JobStatus.PENDING, None)
-            trial_configs.append((trial_id, cfg, cfg.hash))
+            create_trial_result(job_id, trial_id, cfg, JobStatus.PENDING, None)
+            trial_configs.append((trial_id, cfg))
 
         trial_configs = _order_trial_configs(trial_configs)
         best_steps_per_sec = 0.0
