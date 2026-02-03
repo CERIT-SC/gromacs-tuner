@@ -74,7 +74,9 @@ def _save_upload(file: UploadFile, dest: Path) -> None:
 
 @app.post("/api/tuner_runs")
 async def create_tuner_run(
-    _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)], file: Annotated[UploadFile, File()]
+    _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)],
+    file: Annotated[UploadFile, File()],
+    nsteps: int = 25_000,
 ) -> APIResponse:
     """Start a new hyperparameter tuning run with a .tpr file."""
     _validate_upload(file, ".tpr")
@@ -84,7 +86,7 @@ async def create_tuner_run(
     job_id = str(uuid.uuid4())
     cleanup_tmp_files(job_id)
     try:
-        submit_tuning_job(job_id, str(file_path), job_type="standard")
+        submit_tuning_job(job_id, str(file_path), job_type="standard", nsteps=nsteps)
     except Exception as e:
         logger.exception("Failed to submit tuning job %s", job_id)
         raise HTTPException(status_code=500, detail=f"Failed to submit job: {e}") from e

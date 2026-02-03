@@ -28,6 +28,14 @@ paths:
       description: Uploads a `.tpr` file and starts a tuning process.
       security:
         - basicAuth: []
+      parameters:
+        - name: nsteps
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 25000
+          description: Number of steps to run in GROMACS mdrun.
       requestBody:
         required: true
         content:

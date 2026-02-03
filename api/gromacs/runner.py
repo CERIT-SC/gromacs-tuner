@@ -31,6 +31,7 @@ def run_mdrun(
     trial_id: str,
     job_id: str,
     extra_args: str = "",
+    nsteps: int = 25_000,
     best_steps_per_sec: float = 0.0,
 ) -> tuple[float, float, bool]:
     """
@@ -42,6 +43,7 @@ def run_mdrun(
         trial_id: Unique trial identifier
         job_id: Parent job identifier
         extra_args: Additional mdrun arguments
+        nsteps: Number of steps to run
         best_steps_per_sec: Best steps/sec observed so far (for early stopping)
 
     Returns:
@@ -54,7 +56,7 @@ def run_mdrun(
     env = os.environ.copy()
     env["OMP_NUM_THREADS"] = str(config.ntomp)
 
-    cmd = _build_command(config, tpr_path)
+    cmd = _build_command(config, tpr_path, nsteps)
     if extra_args:
         cmd += shlex.split(extra_args)
 
@@ -78,7 +80,7 @@ def run_mdrun(
     return performance, final_steps_per_sec, False
 
 
-def _build_command(config: TrialConfig, tpr_path: str) -> list[str]:
+def _build_command(config: TrialConfig, tpr_path: str, nsteps: int = 25_000) -> list[str]:
     """Build the mpirun + gmx mdrun command."""
     cmd = [
         "mpirun",
@@ -95,6 +97,8 @@ def _build_command(config: TrialConfig, tpr_path: str) -> list[str]:
         config.pme,
         "-s",
         tpr_path,
+        "-nsteps",
+        str(nsteps),
         "-cpt",
         "-1",  # Disable checkpointing for tuning
     ]

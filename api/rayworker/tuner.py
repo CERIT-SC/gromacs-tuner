@@ -55,20 +55,22 @@ def _run_single_trial(
     config: TrialConfig,
     cfg_hash: str,
     extra_args: str,
+    nsteps: int = 25_000,
     best_steps_per_sec: float = 0.0,
 ) -> dict[str, Any]:
     """Execute a single GROMACS trial on a Ray worker."""
     logger.info(
-        "Running trial %s: ntomp=%d, np=%d, nb=%s, pme=%s (best_sps=%.1f)",
+        "Running trial %s: ntomp=%d, np=%d, nb=%s, pme=%s, nsteps=%d (best_sps=%.1f)",
         trial_id,
         config.ntomp,
         config.np,
         config.nb,
         config.pme,
+        nsteps,
         best_steps_per_sec,
     )
     performance, steps_per_sec, early_stopped = run_mdrun(
-        config, tpr_path, trial_id, job_id, extra_args, best_steps_per_sec
+        config, tpr_path, trial_id, job_id, extra_args, nsteps, best_steps_per_sec
     )
     status = JobStatus.TERMINATED if performance > 0 or early_stopped else JobStatus.ERROR
     logger.info(
@@ -106,6 +108,7 @@ def _submit_trials(
     extra_args: str,
     tpr_hash: str,
     trials: list[TrialConfigEntry],
+    nsteps: int,
     best_steps_per_sec: float,
 ) -> dict[ray.ObjectRef, str]:
     """Submit a batch of trials to Ray and return futures map."""
@@ -118,6 +121,7 @@ def _submit_trials(
             cfg,
             cfg_hash,
             extra_args,
+            nsteps,  # type: ignore
             best_steps_per_sec,  # type: ignore
         )
         future_to_hash[future] = cfg_hash
@@ -163,7 +167,7 @@ def _process_trial_results(
     return new_best
 
 
-def _run_tuning_async(job_id: str, tpr_path: str, extra_args: str = "") -> None:
+def _run_tuning_async(job_id: str, tpr_path: str, extra_args: str = "", nsteps: int = 25_000) -> None:
     """Run grid search tuning in a background thread with early stopping support."""
     try:
         _ensure_ray_initialized()
@@ -193,13 +197,15 @@ def _run_tuning_async(job_id: str, tpr_path: str, extra_args: str = "") -> None:
         remaining_trials = trial_configs[baseline_count:]
 
         if baseline_trials:
-            future_to_hash = _submit_trials(job_id, tpr_path, extra_args, tpr_hash, baseline_trials, best_steps_per_sec)
+            future_to_hash = _submit_trials(
+                job_id, tpr_path, extra_args, tpr_hash, baseline_trials, nsteps, best_steps_per_sec
+            )
             best_steps_per_sec = _process_trial_results(job_id, tpr_hash, future_to_hash, best_steps_per_sec)
 
         batch_size = max(1, EARLY_STOP_BATCH_SIZE)
         for idx in range(0, len(remaining_trials), batch_size):
             batch = remaining_trials[idx : idx + batch_size]
-            future_to_hash = _submit_trials(job_id, tpr_path, extra_args, tpr_hash, batch, best_steps_per_sec)
+            future_to_hash = _submit_trials(job_id, tpr_path, extra_args, tpr_hash, batch, nsteps, best_steps_per_sec)
             best_steps_per_sec = _process_trial_results(job_id, tpr_hash, future_to_hash, best_steps_per_sec)
 
         logger.info("All trials completed for job %s (best: %.1f steps/s)", job_id, best_steps_per_sec)
@@ -212,10 +218,12 @@ def _run_tuning_async(job_id: str, tpr_path: str, extra_args: str = "") -> None:
             _active_jobs.pop(job_id, None)
 
 
-def submit_tuning_job(job_id: str, tpr_path: str, job_type: str = "standard", extra_args: str = "") -> str:
+def submit_tuning_job(
+    job_id: str, tpr_path: str, job_type: str = "standard", extra_args: str = "", nsteps: int = 25_000
+) -> str:
     """Submit a GROMACS tuning job."""
     create_job(job_id, job_type, tpr_path, extra_args or None)
-    thread = threading.Thread(target=_run_tuning_async, args=(job_id, tpr_path, extra_args), daemon=True)
+    thread = threading.Thread(target=_run_tuning_async, args=(job_id, tpr_path, extra_args, nsteps), daemon=True)
     with _job_lock:
         _active_jobs[job_id] = thread
     thread.start()
