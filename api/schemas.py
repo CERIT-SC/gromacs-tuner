@@ -1,6 +1,6 @@
 """Common types and enums for the GROMACS tuner API."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
@@ -24,16 +24,6 @@ class TrialInfo:
     config: TrialConfig
     status: str
     performance: float | None = None
-
-
-@dataclass
-class JobInfo:
-    """Information about a tuning job."""
-
-    total: int
-    status: str = JobStatus.RUNNING
-    trials: dict[str, TrialInfo] = field(default_factory=dict)
-    error: str | None = None
 
 
 @dataclass

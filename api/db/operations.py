@@ -1,7 +1,6 @@
 """Database operations for the GROMACS tuner."""
 
 import logging
-from collections.abc import Sequence
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -27,16 +26,6 @@ def update_job_status(job_id: str, status: str, error: str | None = None) -> boo
     with get_session() as session:
         if job := session.execute(select(Job).where(Job.job_id == job_id)).scalar_one_or_none():
             job.status, job.error, job.updated_at = status, error, datetime.now(timezone.utc)
-            session.commit()
-            return True
-        return False
-
-
-def update_job_config(job_id: str, total_configs: int) -> bool:
-    """Update job with total config count."""
-    with get_session() as session:
-        if job := session.execute(select(Job).where(Job.job_id == job_id)).scalar_one_or_none():
-            job.total_configs, job.updated_at = total_configs, datetime.now(timezone.utc)
             session.commit()
             return True
         return False
@@ -90,25 +79,21 @@ def create_trial_result(
         return True
 
 
-def update_trial_result(config_hash: str, status: str, performance: float | None) -> bool:
+def update_trial_result(trial_id: str, status: str, performance: float | None) -> bool:
     """Update a trial's status and performance."""
     with get_session() as session:
-        if trial := session.execute(select(Trial).where(Trial.config_hash == config_hash)).scalar_one_or_none():
+        if trial := session.execute(select(Trial).where(Trial.trial_id == trial_id)).scalar_one_or_none():
             trial.status, trial.performance = status, performance
             session.commit()
             return True
         return False
 
 
-def _trials_to_info_dict(trials: Sequence[Trial]) -> dict[str, TrialInfo]:
-    """Convert trial list to dict keyed by trial_id."""
-    return {t.trial_id: TrialInfo(config=t.config, status=t.status, performance=t.performance) for t in trials}
-
-
 def get_trials_by_job_id(job_id: str) -> dict[str, TrialInfo]:
     """Get all trials for a specific job, mapped by trial_id."""
     with get_session() as session:
-        return _trials_to_info_dict(session.execute(select(Trial).where(Trial.job_id == job_id)).scalars().all())
+        trials = session.execute(select(Trial).where(Trial.job_id == job_id)).scalars().all()
+        return {t.trial_id: TrialInfo(config=t.config, status=t.status, performance=t.performance) for t in trials}
 
 
 def delete_incomplete_trials_by_job_id(job_id: str) -> int:
