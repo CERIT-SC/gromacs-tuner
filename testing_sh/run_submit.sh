@@ -6,7 +6,7 @@ AUTH="admin:strong-secret-here"
 
 # Usage info
 usage() {
-  echo "Usage: $0 [--tpr tprfile] [--extra-args args]"
+  echo "Usage: $0 --tpr tprfile [extra args...]"
   exit 1
 }
 
