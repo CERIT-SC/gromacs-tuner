@@ -20,6 +20,13 @@ PME_OPTIONS = ["cpu", "gpu"]
 
 MAX_UPLOAD_SIZE = 10 * 1024**3  # 10 GB
 
+# Early stopping config
+EARLY_STOP_ENABLED = True
+EARLY_STOP_THRESHOLD = 0.65  # Stop if <65% of best trial
+EARLY_STOP_WARMUP_STEPS = 5000  # Steps before evaluating
+EARLY_STOP_WARMUP_SECONDS = 60.0  # Seconds before evaluating (fallback)
+EARLY_STOP_CHECK_INTERVAL = 10.0  # Seconds between checks
+
 RUNTIME_WORKDIR = os.getenv(
     "RUNTIME_WORKDIR",
     str(Path(__file__).resolve().parent.parent),

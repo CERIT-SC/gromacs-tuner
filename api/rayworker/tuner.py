@@ -41,26 +41,81 @@ def _ensure_ray_initialized() -> None:
 
 @ray.remote(max_retries=3)
 def _run_single_trial(
-    job_id: str, tpr_path: str, trial_id: str, config: TrialConfig, cfg_hash: str, extra_args: str
+    job_id: str,
+    tpr_path: str,
+    trial_id: str,
+    config: TrialConfig,
+    cfg_hash: str,
+    extra_args: str,
+    best_steps_per_sec: float = 0.0,
 ) -> dict[str, Any]:
     """Execute a single GROMACS trial on a Ray worker."""
     logger.info(
-        "Running trial %s: ntomp=%d, np=%d, nb=%s, pme=%s", trial_id, config.ntomp, config.np, config.nb, config.pme
+        "Running trial %s: ntomp=%d, np=%d, nb=%s, pme=%s (best_sps=%.1f)",
+        trial_id,
+        config.ntomp,
+        config.np,
+        config.nb,
+        config.pme,
+        best_steps_per_sec,
     )
-    performance = run_mdrun(config, tpr_path, trial_id, job_id, extra_args)
+    performance, steps_per_sec = run_mdrun(config, tpr_path, trial_id, job_id, extra_args, best_steps_per_sec)
     status = JobStatus.TERMINATED if performance > 0 else JobStatus.ERROR
-    logger.info("Trial %s completed: status=%s, performance=%.2f ns/day", trial_id, status, performance or 0.0)
+    logger.info(
+        "Trial %s completed: status=%s, performance=%.2f ns/day, steps/sec=%.1f",
+        trial_id,
+        status,
+        performance or 0.0,
+        steps_per_sec,
+    )
     return {
         "trial_id": trial_id,
         "cfg_hash": cfg_hash,
         "config": config.to_dict(),
         "status": status,
         "performance": performance,
+        "steps_per_sec": steps_per_sec,
     }
 
 
+def _process_trial_results(
+    job_id: str,
+    tpr_hash: str,
+    future_to_hash: dict[ray.ObjectRef, str],
+    best_steps_per_sec: float,
+) -> float:
+    """Wait for trials and update database results. Returns updated best_steps_per_sec."""
+    pending_futures = list(future_to_hash.keys())
+    new_best = best_steps_per_sec
+
+    while pending_futures:
+        done, pending_futures = ray.wait(pending_futures, num_returns=1)
+        cfg_hash = future_to_hash[done[0]]
+        try:
+            res: dict[str, Any] = ray.get(done[0])
+            if res:
+                update_trial_result(
+                    tpr_hash,
+                    res.get("cfg_hash", cfg_hash),
+                    res.get("status", JobStatus.ERROR),
+                    res.get("performance"),
+                )
+                steps_per_sec = res.get("steps_per_sec", 0.0)
+                if steps_per_sec > new_best:
+                    new_best = steps_per_sec
+                    logger.info("Job %s: New best steps/sec: %.1f", job_id, new_best)
+            else:
+                logger.warning("Trial with config %s returned no result", cfg_hash)
+                update_trial_result(tpr_hash, cfg_hash, JobStatus.ERROR, None)
+        except Exception as e:
+            logger.warning("Trial with config %s failed: %s", cfg_hash, e)
+            update_trial_result(tpr_hash, cfg_hash, JobStatus.ERROR, None)
+
+    return new_best
+
+
 def _run_tuning_async(job_id: str, tpr_path: str, extra_args: str = "") -> None:
-    """Run grid search tuning in a background thread."""
+    """Run grid search tuning in a background thread with early stopping support."""
     try:
         _ensure_ray_initialized()
         tpr_hash = sha256_of_file(tpr_path)
@@ -70,14 +125,6 @@ def _run_tuning_async(job_id: str, tpr_path: str, extra_args: str = "") -> None:
         update_job_status(job_id, JobStatus.RUNNING)
 
         pending_configs = [(cfg, cfg.hash) for cfg in all_configs if cfg.hash not in completed_hashes]
-        logger.info(
-            "Job %s: %d total configs, %d cached, %d to run",
-            job_id,
-            len(all_configs),
-            len(completed_hashes),
-            len(pending_configs),
-        )
-
         if not pending_configs:
             logger.info("All configs already cached for job %s", job_id)
             update_job_status(job_id, JobStatus.TERMINATED)
@@ -89,35 +136,46 @@ def _run_tuning_async(job_id: str, tpr_path: str, extra_args: str = "") -> None:
             create_trial_result(job_id, trial_id, tpr_hash, cfg, cfg_hash, JobStatus.PENDING, None)
             trial_configs.append((trial_id, cfg, cfg_hash))
 
-        future_to_hash = {}
-        for trial_id, cfg, cfg_hash in trial_configs:
-            future = _run_single_trial.options(num_cpus=cfg.num_cpus, num_gpus=cfg.num_gpus).remote(
-                job_id, tpr_path, trial_id, cfg, cfg_hash, extra_args
-            )
-            future_to_hash[future] = cfg_hash
-            update_trial_result(tpr_hash, cfg_hash, JobStatus.RUNNING, None)
+        best_steps_per_sec = 0.0
+        initial_batch_size = min(3, len(trial_configs))
+        initial_batch = trial_configs[:initial_batch_size]
+        remaining_trials = trial_configs[initial_batch_size:]
 
-        pending_futures = list(future_to_hash.keys())
-        while pending_futures:
-            done, pending_futures = ray.wait(pending_futures, num_returns=1)
-            cfg_hash = future_to_hash[done[0]]
-            try:
-                res: dict[str, Any] = ray.get(done[0])
-                if res:
-                    update_trial_result(
-                        tpr_hash,
-                        res.get("cfg_hash", cfg_hash),
-                        res.get("status", JobStatus.ERROR),
-                        res.get("performance"),
-                    )
-                else:
-                    logger.warning("Trial with config %s returned no result", cfg_hash)
-                    update_trial_result(tpr_hash, cfg_hash, JobStatus.ERROR, None)
-            except Exception as e:
-                logger.warning("Trial with config %s failed: %s", cfg_hash, e)
-                update_trial_result(tpr_hash, cfg_hash, JobStatus.ERROR, None)
+        # Phase 1: Establish baseline
+        if initial_batch:
+            future_to_hash = {}
+            for trial_id, cfg, cfg_hash in initial_batch:
+                future = _run_single_trial.options(num_cpus=cfg.num_cpus, num_gpus=cfg.num_gpus).remote(
+                    job_id,
+                    tpr_path,
+                    trial_id,
+                    cfg,
+                    cfg_hash,
+                    extra_args,
+                    0.0,  # type: ignore
+                )
+                future_to_hash[future] = cfg_hash
+                update_trial_result(tpr_hash, cfg_hash, JobStatus.RUNNING, None)
+            best_steps_per_sec = _process_trial_results(job_id, tpr_hash, future_to_hash, best_steps_per_sec)
 
-        logger.info("All trials completed for job %s", job_id)
+        # Phase 2: Run remaining with early stopping
+        if remaining_trials:
+            future_to_hash = {}
+            for trial_id, cfg, cfg_hash in remaining_trials:
+                future = _run_single_trial.options(num_cpus=cfg.num_cpus, num_gpus=cfg.num_gpus).remote(
+                    job_id,
+                    tpr_path,
+                    trial_id,
+                    cfg,
+                    cfg_hash,
+                    extra_args,
+                    best_steps_per_sec,  # type: ignore
+                )
+                future_to_hash[future] = cfg_hash
+                update_trial_result(tpr_hash, cfg_hash, JobStatus.RUNNING, None)
+            best_steps_per_sec = _process_trial_results(job_id, tpr_hash, future_to_hash, best_steps_per_sec)
+
+        logger.info("All trials completed for job %s (best: %.1f steps/s)", job_id, best_steps_per_sec)
         update_job_status(job_id, JobStatus.TERMINATED)
     except Exception as e:
         logger.exception("Tuning job %s failed", job_id)
