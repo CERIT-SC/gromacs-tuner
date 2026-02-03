@@ -12,7 +12,6 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from pathlib import Path
 
 import ray
-from pydantic import ValidationError
 
 from api.config import JOBS_DIR, TPR_DIR
 
@@ -130,7 +129,7 @@ def sanitize_extra_args(extra_args: str) -> str:
         Canonicalized extra arguments string.
 
     Raises:
-        ValidationError: If extra_args contains forbidden characters or patterns.
+        ValueError: If extra_args contains forbidden characters or patterns.
     """
     extra_args = (extra_args or "").strip()
     if not extra_args:
@@ -138,18 +137,18 @@ def sanitize_extra_args(extra_args: str) -> str:
 
     # Block shell metacharacters
     if _EXTRA_ARGS_FORBIDDEN_RE.search(extra_args):
-        raise ValidationError("extra_args contains forbidden characters: ; & | ` $ ( ) < >")
+        raise ValueError("extra_args contains forbidden characters: ; & | ` $ ( ) < >")
 
     # Validate shell quoting
     try:
         tokens = shlex.split(extra_args, posix=True)
     except ValueError as e:
-        raise ValidationError(f"Invalid extra_args: {e}") from e
+        raise ValueError(f"Invalid extra_args: {e}") from e
 
     # Check for forbidden flags (case-insensitive)
     lowered = {t.lower() for t in tokens}
     if lowered & _EXTRA_ARGS_FORBIDDEN_FLAGS:
-        raise ValidationError(
+        raise ValueError(
             "extra_args must not override critical GROMACS flags: -deffnm, -s, -nsteps, -ntomp, -np, -nb, -pme"
         )
 

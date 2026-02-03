@@ -9,7 +9,7 @@ from tempfile import TemporaryDirectory
 from typing import Annotated, Any
 
 import yaml
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel, Field, ValidationError
@@ -76,8 +76,8 @@ def _save_upload(file: UploadFile, dest: Path) -> None:
 async def create_tuner_run(
     _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)],
     file: Annotated[UploadFile, File()],
-    nsteps: int = 25_000,
-    extra_args: str = "",
+    nsteps: Annotated[int, Form(ge=1, description="Number of steps for GROMACS simulation")] = 25_000,
+    extra_args: Annotated[str, Form(description="Extra GROMACS arguments")] = "",
 ) -> APIResponse:
     """Start a new hyperparameter tuning run with a .tpr file."""
     _validate_upload(file, ".tpr")
@@ -87,7 +87,7 @@ async def create_tuner_run(
     # Sanitize extra_args
     try:
         sanitized_args = sanitize_extra_args(extra_args)
-    except ValidationError as e:
+    except (ValidationError, ValueError) as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
     job_id = str(uuid.uuid4())
@@ -160,7 +160,7 @@ async def get_status(job_id: str, _: Annotated[HTTPBasicCredentials, Depends(ver
 async def run_custom_single_endpoint(
     _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)],
     file: Annotated[UploadFile, File()],
-    extra_args: str = "",
+    extra_args: Annotated[str, Form(description="Extra GROMACS arguments")] = "",
 ) -> APIResponse:
     """Run a custom GROMACS tuning job with extra arguments."""
     _validate_upload(file, ".zip")
@@ -168,7 +168,7 @@ async def run_custom_single_endpoint(
     # Sanitize extra_args
     try:
         sanitized_args = sanitize_extra_args(extra_args)
-    except ValidationError as e:
+    except (ValidationError, ValueError) as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
     with TemporaryDirectory() as tmpdir:

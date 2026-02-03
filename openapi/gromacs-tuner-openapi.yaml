@@ -28,36 +28,32 @@ paths:
       description: Uploads a `.tpr` file and starts a tuning process.
       security:
         - basicAuth: []
-      parameters:
-        - name: nsteps
-          in: query
-          required: false
-          schema:
-            type: integer
-            default: 25000
-          description: Number of steps to run in GROMACS mdrun.
-        - name: extra_args
-          in: query
-          required: false
-          schema:
-            type: string
-            default: ""
-            example: "-plumed plumed.dat"
-          description: |
-            Additional GROMACS mdrun arguments.
-            Shell metacharacters (; & | ` $ ( ) < >) are forbidden.
-            Critical flags (-deffnm, -s, -nsteps, -ntomp, -np, -nb, -pme) cannot be overridden.
       requestBody:
         required: true
         content:
           multipart/form-data:
             schema:
               type: object
+              required:
+                - file
               properties:
                 file:
                   type: string
                   format: binary
                   description: The `.tpr` file to be tuned.
+                nsteps:
+                  type: integer
+                  default: 25000
+                  minimum: 1
+                  description: Number of steps to run in GROMACS mdrun (must be at least 1).
+                extra_args:
+                  type: string
+                  default: ""
+                  example: "-plumed plumed.dat"
+                  description: |
+                    Additional GROMACS mdrun arguments.
+                    Shell metacharacters (; & | ` $ ( ) < >) are forbidden.
+                    Critical flags (-deffnm, -s, -nsteps, -ntomp, -np, -nb, -pme) cannot be overridden.
       responses:
         "200":
           description: Tuning run successfully started.
