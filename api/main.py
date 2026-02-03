@@ -12,7 +12,7 @@ import yaml
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.exc import OperationalError
 from starlette.concurrency import run_in_threadpool
 
@@ -27,7 +27,7 @@ from api.db.operations import (
 )
 from api.rayworker import cancel_job, submit_tuning_job, sync_job_status
 from api.schemas import JobStatus, JobStatusResponse, TrialResponse
-from api.utils import cleanup_tmp_files, get_cluster_status
+from api.utils import cleanup_tmp_files, get_cluster_status, sanitize_extra_args
 
 logger = logging.getLogger(__name__)
 
@@ -77,16 +77,23 @@ async def create_tuner_run(
     _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)],
     file: Annotated[UploadFile, File()],
     nsteps: int = 25_000,
+    extra_args: str = "",
 ) -> APIResponse:
     """Start a new hyperparameter tuning run with a .tpr file."""
     _validate_upload(file, ".tpr")
     file_path = TPR_DIR / f"{uuid.uuid4()}_md.tpr"
     await run_in_threadpool(_save_upload, file, file_path)
 
+    # Sanitize extra_args
+    try:
+        sanitized_args = sanitize_extra_args(extra_args)
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
     job_id = str(uuid.uuid4())
     cleanup_tmp_files(job_id)
     try:
-        submit_tuning_job(job_id, str(file_path), job_type="standard", nsteps=nsteps)
+        submit_tuning_job(job_id, str(file_path), job_type="standard", extra_args=sanitized_args, nsteps=nsteps)
     except Exception as e:
         logger.exception("Failed to submit tuning job %s", job_id)
         raise HTTPException(status_code=500, detail=f"Failed to submit job: {e}") from e
@@ -158,6 +165,12 @@ async def run_custom_single_endpoint(
     """Run a custom GROMACS tuning job with extra arguments."""
     _validate_upload(file, ".zip")
 
+    # Sanitize extra_args
+    try:
+        sanitized_args = sanitize_extra_args(extra_args)
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
     with TemporaryDirectory() as tmpdir:
         tmpdir_path = Path(tmpdir)
         zip_path = tmpdir_path / "input.zip"
@@ -176,7 +189,7 @@ async def run_custom_single_endpoint(
     job_id = str(uuid.uuid4())
     cleanup_tmp_files(job_id)
     try:
-        submit_tuning_job(job_id, str(dest), job_type="custom", extra_args=extra_args)
+        submit_tuning_job(job_id, str(dest), job_type="custom", extra_args=sanitized_args)
     except Exception as e:
         logger.exception("Failed to submit custom job %s", job_id)
         raise HTTPException(status_code=500, detail=f"Failed to submit job: {e}") from e

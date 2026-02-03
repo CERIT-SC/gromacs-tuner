@@ -3,6 +3,8 @@
 import hashlib
 import logging
 import os
+import re
+import shlex
 import shutil
 import time
 from collections import deque
@@ -10,10 +12,17 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from pathlib import Path
 
 import ray
+from pydantic import ValidationError
 
 from api.config import JOBS_DIR, TPR_DIR
 
 logger = logging.getLogger(__name__)
+
+# Forbidden shell metacharacters for extra_args validation
+_EXTRA_ARGS_FORBIDDEN_RE = re.compile(r"[;&|`$()<>]")
+
+# Forbidden GROMACS flags that should not be overridden
+_EXTRA_ARGS_FORBIDDEN_FLAGS = {"-deffnm", "-s", "-nsteps", "-ntomp", "-np", "-nb", "-pme"}
 
 
 def cleanup_tmp_files(job_id: str, directory: Path = TPR_DIR) -> None:
@@ -105,3 +114,44 @@ def tail(file: Path | str, n: int = 10) -> str:
             pos = chunk_start
 
         return b"\n".join(list(lines_found)[-n:]).decode("utf-8", "replace")
+
+
+def sanitize_extra_args(extra_args: str) -> str:
+    """
+    Validate and normalize extra GROMACS mdrun args.
+
+    This is used inside a shell script in the K8s job container, so we block
+    shell metacharacters and also forbid overriding critical args.
+
+    Args:
+        extra_args: Raw extra arguments string from user input.
+
+    Returns:
+        Canonicalized extra arguments string.
+
+    Raises:
+        ValidationError: If extra_args contains forbidden characters or patterns.
+    """
+    extra_args = (extra_args or "").strip()
+    if not extra_args:
+        return ""
+
+    # Block shell metacharacters
+    if _EXTRA_ARGS_FORBIDDEN_RE.search(extra_args):
+        raise ValidationError("extra_args contains forbidden characters: ; & | ` $ ( ) < >")
+
+    # Validate shell quoting
+    try:
+        tokens = shlex.split(extra_args, posix=True)
+    except ValueError as e:
+        raise ValidationError(f"Invalid extra_args: {e}") from e
+
+    # Check for forbidden flags (case-insensitive)
+    lowered = {t.lower() for t in tokens}
+    if lowered & _EXTRA_ARGS_FORBIDDEN_FLAGS:
+        raise ValidationError(
+            "extra_args must not override critical GROMACS flags: -deffnm, -s, -nsteps, -ntomp, -np, -nb, -pme"
+        )
+
+    # Canonicalize spacing/quoting
+    return shlex.join(tokens)
