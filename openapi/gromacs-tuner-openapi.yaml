@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
   title: "GROMACS Tuner API"
-  version: "1.1"
+  version: "1.2"
   description: "API for submitting and monitoring GROMACS tuning runs."
 
 servers:
@@ -34,11 +34,26 @@ paths:
           multipart/form-data:
             schema:
               type: object
+              required:
+                - file
               properties:
                 file:
                   type: string
                   format: binary
                   description: The `.tpr` file to be tuned.
+                nsteps:
+                  type: integer
+                  default: 25000
+                  minimum: 1
+                  description: Number of steps to run in GROMACS mdrun (must be at least 1).
+                extra_args:
+                  type: string
+                  default: ""
+                  example: "-plumed plumed.dat"
+                  description: |
+                    Additional GROMACS mdrun arguments.
+                    Shell metacharacters (; & | ` $ ( ) < >) are forbidden.
+                    Critical flags (-deffnm, -s, -nsteps, -ntomp, -np, -nb, -pme) cannot be overridden.
       responses:
         "200":
           description: Tuning run successfully started.
@@ -104,7 +119,12 @@ paths:
                   description: A `.zip` file with a `md.tpr` file and optionally other files.
                 extra_args:
                   type: string
-                  example: "-deffnm md -plumed plumed.dat"
+                  default: ""
+                  example: "-plumed plumed.dat"
+                  description: |
+                    Additional GROMACS mdrun arguments.
+                    Shell metacharacters (; & | ` $ ( ) < >) are forbidden.
+                    Critical flags (-deffnm, -s, -nsteps, -ntomp, -np, -nb, -pme) cannot be overridden.
       responses:
         "200":
           description: Custom tuning job started.
