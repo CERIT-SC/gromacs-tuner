@@ -12,17 +12,6 @@ security:
 
 paths:
   /tuner_runs:
-    get:
-      summary: List active tuner jobs.
-      security:
-        - basicAuth: []
-      responses:
-        "200":
-          description: Active jobs listed.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SuccessResponseWithActive"
     post:
       summary: Submit a `.tpr` file for tuning.
       description: Uploads a `.tpr` file and starts a tuning process.
@@ -100,51 +89,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SuccessResponseWithStatus"
-
-  /custom_run:
-    post:
-      summary: Submit a ZIP job with custom args.
-      security:
-        - basicAuth: []
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              properties:
-                file:
-                  type: string
-                  format: binary
-                  description: A `.zip` file with a `md.tpr` file and optionally other files.
-                extra_args:
-                  type: string
-                  default: ""
-                  example: "-plumed plumed.dat"
-                  description: |
-                    Additional GROMACS mdrun arguments.
-                    Shell metacharacters (; & | ` $ ( ) < >) are forbidden.
-                    Critical flags (-deffnm, -s, -nsteps, -ntomp, -np, -nb, -pme) cannot be overridden.
-      responses:
-        "200":
-          description: Custom tuning job started.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SuccessResponseWithRunID"
-
-  /completed_jobs:
-    get:
-      summary: List all completed jobs.
-      security:
-        - basicAuth: []
-      responses:
-        "200":
-          description: Completed jobs listed.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SuccessResponseWithCompleted"
 
   /health:
     get:
@@ -262,42 +206,6 @@ components:
               type: integer
             cancelled:
               type: boolean
-        message:
-          type: string
-        error:
-          type: object
-          nullable: true
-
-    SuccessResponseWithActive:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          type: object
-          properties:
-            active_jobs:
-              type: array
-              items:
-                type: string
-        message:
-          type: string
-        error:
-          type: object
-          nullable: true
-
-    SuccessResponseWithCompleted:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          type: object
-          properties:
-            completed_jobs:
-              type: array
-              items:
-                type: string
         message:
           type: string
         error:

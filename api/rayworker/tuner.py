@@ -115,8 +115,8 @@ def _submit_trials(
             trial_id,
             cfg,
             extra_args,
-            nsteps,  # type: ignore
-            best_steps_per_sec,  # type: ignore
+            nsteps,  # type: ignore[arg-type]
+            best_steps_per_sec,
         )
         future_to_trial[future] = trial_id
         update_trial_result(trial_id, JobStatus.RUNNING, None)

@@ -37,14 +37,6 @@ def get_job(job_id: str) -> Job | None:
         return session.execute(select(Job).where(Job.job_id == job_id)).scalar_one_or_none()
 
 
-def get_jobs_by_status(statuses: list[str]) -> list[Job]:
-    """Get all jobs with the given statuses."""
-    if not statuses:
-        return []
-    with get_session() as session:
-        return list(session.execute(select(Job).where(Job.status.in_(statuses))).scalars().all())
-
-
 def delete_job(job_id: str) -> bool:
     """Delete a job record."""
     with get_session() as session:
