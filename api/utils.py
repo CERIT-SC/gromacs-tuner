@@ -4,15 +4,12 @@ import hashlib
 import logging
 import os
 import shutil
-import threading
 import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from pathlib import Path
-from typing import Dict, Tuple, Union
 
 import ray
-from ray.exceptions import RaySystemError
 
 from api.config import JOBS_DIR, TPR_DIR
 
@@ -23,18 +20,17 @@ def cleanup_tmp_files(job_id: str, directory: Path = TPR_DIR) -> None:
     """Remove temporary files associated with a job ID."""
     for path in directory.glob(f"{job_id}*"):
         try:
-            if path.is_dir():
+            is_dir = path.is_dir()
+            if is_dir:
                 shutil.rmtree(path)
-                logger.info("Deleted directory: %s", path)
             else:
                 path.unlink()
-                logger.info("Deleted file: %s", path)
+            logger.info("Deleted %s: %s", "directory" if is_dir else "file", path)
         except OSError:
             logger.exception("Failed to delete %s", path)
 
-    # Also clean up trial directories
     trial_job_dir = JOBS_DIR / job_id
-    if trial_job_dir.exists() and trial_job_dir.is_dir():
+    if trial_job_dir.is_dir():
         try:
             shutil.rmtree(trial_job_dir)
             logger.info("Deleted trial directory: %s", trial_job_dir)
@@ -42,15 +38,17 @@ def cleanup_tmp_files(job_id: str, directory: Path = TPR_DIR) -> None:
             logger.exception("Failed to delete %s", trial_job_dir)
 
 
-def sha256_of_file(path: Union[Path, str]) -> str:
-    """Calculate SHA256 hash of a file."""
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+def sha256_of_file(path: Path | str, chunk_size: int = 8192) -> str:
+    """Calculate SHA256 hash of a file using chunked reading."""
+    hasher = hashlib.sha256()
+    with Path(path).open("rb") as f:
+        while chunk := f.read(chunk_size):
+            hasher.update(chunk)
+    return hasher.hexdigest()
 
 
 _cluster_status_cache = {"status": "N/A", "time": 0.0}
-_cluster_status_lock = threading.Lock()
-_status_executor = ThreadPoolExecutor(max_workers=1)
-
+_cluster_status_executor = ThreadPoolExecutor(max_workers=1)
 CLUSTER_STATUS_TTL = 10.0
 RAY_FETCH_TIMEOUT = 4.0
 
@@ -58,78 +56,52 @@ RAY_FETCH_TIMEOUT = 4.0
 def get_cluster_status() -> str:
     """Get current Ray cluster resource usage with caching."""
     now = time.time()
-    # First check without lock for fast path
     if now - _cluster_status_cache["time"] < CLUSTER_STATUS_TTL:
         return _cluster_status_cache["status"]
 
-    with _cluster_status_lock:
-        # Double-check after acquiring lock to prevent thundering herd
-        now = time.time()
-        if now - _cluster_status_cache["time"] < CLUSTER_STATUS_TTL:
-            return _cluster_status_cache["status"]
-
+    def _fetch() -> str:
         try:
             if not ray.is_initialized():
                 return _cluster_status_cache["status"]
-
-            # Run Ray calls in a separate thread with a timeout
-            def _fetch() -> Tuple[Dict[str, float], Dict[str, float]]:
-                return ray.cluster_resources(), ray.available_resources()
-
-            future = _status_executor.submit(_fetch)
-            try:
-                total, avail = future.result(timeout=RAY_FETCH_TIMEOUT)
-            except TimeoutError:
-                logger.warning("ray.cluster_resources() timed out after %.1fs", RAY_FETCH_TIMEOUT)
-                # Update time so we don't try again immediately
-                _cluster_status_cache["time"] = time.time()
-                return _cluster_status_cache["status"]
-
+            total, avail = ray.cluster_resources(), ray.available_resources()
             used_cpu = int(total.get("CPU", 0) - avail.get("CPU", 0))
             used_gpu = int(total.get("GPU", 0) - avail.get("GPU", 0))
-            status = f"{used_cpu}/{int(total.get('CPU', 0))} CPUs, {used_gpu}/{int(total.get('GPU', 0))} GPUs used"
-
-            _cluster_status_cache["status"] = status
-            _cluster_status_cache["time"] = time.time()
-            return status
-        except RaySystemError:
-            logger.exception("RaySystemError in get_cluster_status")
-            return _cluster_status_cache["status"]
-        except Exception:
-            logger.exception("Unexpected error in get_cluster_status")
+            return f"{used_cpu}/{int(total.get('CPU', 0))} CPUs, {used_gpu}/{int(total.get('GPU', 0))} GPUs used"
+        except Exception as e:
+            logger.exception("Error fetching cluster status: %s", e)
             return _cluster_status_cache["status"]
 
+    try:
+        status = _cluster_status_executor.submit(_fetch).result(timeout=RAY_FETCH_TIMEOUT)
+    except TimeoutError:
+        logger.warning("ray.cluster_resources() timed out after %.1fs", RAY_FETCH_TIMEOUT)
+        _cluster_status_cache["time"] = time.time()
+        return _cluster_status_cache["status"]
 
-def tail(file: Union[Path, str], n: int = 10) -> str:
-    """Read last n lines of a file efficiently by reading chunks from the end."""
+    _cluster_status_cache["status"] = status
+    _cluster_status_cache["time"] = time.time()
+    return status
+
+
+def tail(file: Path | str, n: int = 10) -> str:
+    """Read last n lines of a file efficiently."""
     file_path = Path(file) if isinstance(file, str) else file
     with file_path.open("rb") as f:
         f.seek(0, os.SEEK_END)
         file_size = f.tell()
-
         if file_size == 0:
             return ""
 
         lines_found: deque[bytes] = deque()
         pos = file_size
-
         while pos > 0 and len(lines_found) < n:
             chunk_start = max(0, pos - 8192)
-            chunk_size = pos - chunk_start
-
             f.seek(chunk_start)
-            chunk = f.read(chunk_size)
-
+            chunk = f.read(pos - chunk_start)
             chunk_lines = chunk.split(b"\n")
-
-            # Handle partial line at the end of the chunk
             if lines_found and chunk_lines:
                 lines_found[0] = chunk_lines.pop() + lines_found[0]
-
-            # Prepend newly read lines to the deque
             lines_found.extendleft(reversed(chunk_lines))
-
             pos = chunk_start
 
-        result_lines = list(lines_found)[-n:]
-        return b"\n".join(result_lines).decode("utf-8", "replace")
+        return b"\n".join(list(lines_found)[-n:]).decode("utf-8", "replace")

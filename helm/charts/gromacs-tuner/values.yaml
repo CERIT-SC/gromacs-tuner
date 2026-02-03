@@ -24,7 +24,7 @@ storage:
 
 # Ray cluster configuration
 ray:
-  version: "2.42.1"
+  version: "2.53.0"
   image: "cerit.io/xkrasa/gromacs-tuner-worker"
   autoscaler:
     idleTimeoutSeconds: 300

@@ -8,6 +8,9 @@ IMAGE := $(REGISTRY)/$(IMAGE_NAME):$(TAG)
 DOCKERFILE ?= Dockerfile
 CONTEXT ?= .
 
+# Build parallelism (increase if you have more CPU cores/memory)
+JOBS ?= 8
+
 .PHONY: help build push clean tag
 
 help: ## Show help
@@ -15,8 +18,8 @@ help: ## Show help
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
 build: ## Build Docker image (local)
-	@echo "Building $(IMAGE) from $(DOCKERFILE)"
-	docker build -t $(IMAGE) -f $(DOCKERFILE) $(CONTEXT)
+	@echo "Building $(IMAGE) from $(DOCKERFILE) with JOBS=$(JOBS)"
+	docker build -t $(IMAGE) -f $(DOCKERFILE) --build-arg JOBS=$(JOBS) $(CONTEXT)
 
 push: build ## Push image to registry
 	@[ -n "$(REGISTRY)" ] || { echo "Error: REGISTRY not set" >&2; exit 1; }

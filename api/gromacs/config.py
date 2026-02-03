@@ -4,7 +4,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from itertools import product
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from api.config import MAX_CPU, MAX_GPU, NB_OPTIONS, NP_OPTIONS, NTOMP_OPTIONS, PME_OPTIONS
 
@@ -17,7 +17,7 @@ class TrialConfig:
     ntomp: int = 0  # Number of OpenMP threads per MPI rank to start (0 is guess)
     nb: str = "auto"  # Calculate non-bonded interactions on: auto, cpu, gpu
     pme: str = "auto"  # Perform PME calculations on: auto, cpu, gpu
-    type: Optional[str] = None  # Type of trial, e.g., "replica_exchange"
+    type: str | None = None  # Type of trial, e.g., "replica_exchange"
 
     @property
     def is_valid(self) -> bool:
@@ -47,7 +47,7 @@ class TrialConfig:
         return hashlib.sha256(json.dumps(normalized, sort_keys=True).encode()).hexdigest()[:16]
 
     @classmethod
-    def generate_all_configs(cls) -> List["TrialConfig"]:
+    def generate_all_configs(cls) -> list["TrialConfig"]:
         """Generate all valid GROMACS configurations for grid search."""
         configs = []
 
@@ -59,12 +59,12 @@ class TrialConfig:
         return configs
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "TrialConfig":
+    def from_dict(cls, data: dict[str, Any]) -> "TrialConfig":
         """Create from dictionary."""
         _allowed = {"ntomp", "np", "nb", "pme", "type"}
         return cls(**{k: data[k] for k in _allowed if k in data})
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         result = {"ntomp": self.ntomp, "np": self.np, "nb": self.nb, "pme": self.pme}
         if self.type:

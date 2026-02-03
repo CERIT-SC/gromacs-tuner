@@ -7,7 +7,6 @@ import re
 import shlex
 import subprocess
 from pathlib import Path
-from typing import Dict, List
 
 from api.config import JOBS_DIR
 from api.gromacs.config import TrialConfig
@@ -47,7 +46,7 @@ def run_mdrun(
     return _parse_performance(stdout_log, stderr_log)
 
 
-def _build_command(config: TrialConfig, tpr_path: str) -> List[str]:
+def _build_command(config: TrialConfig, tpr_path: str) -> list[str]:
     """Build the mpirun + gmx mdrun command."""
     cmd = [
         "mpirun",
@@ -81,10 +80,10 @@ def _parse_performance(stdout_log: Path, stderr_log: Path) -> float:
 
 
 def _run_command_with_logs(
-    cmd: List[str],
+    cmd: list[str],
     stdout_log: Path,
     stderr_log: Path,
-    env: Dict[str, str],
+    env: dict[str, str],
     cwd: Path,
     context: str,
 ) -> bool:
