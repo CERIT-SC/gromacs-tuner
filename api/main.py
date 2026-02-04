@@ -22,7 +22,7 @@ from api.db.operations import (
 )
 from api.rayworker import cancel_job, submit_tuning_job, sync_job_status
 from api.schemas import JobStatus, JobStatusResponse, TrialResponse
-from api.utils import cleanup_tmp_files, get_cluster_status, sanitize_extra_args
+from api.utils import cleanup_job_files, get_cluster_status, sanitize_extra_args
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +85,6 @@ async def create_tuner_run(
     except (ValidationError, ValueError) as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
-    cleanup_tmp_files(job_id)
     try:
         submit_tuning_job(job_id, type="standard", extra_args=sanitized_args, nsteps=nsteps)
     except Exception as e:
@@ -114,11 +113,10 @@ async def get_status(job_id: str, _: Annotated[HTTPBasicCredentials, Depends(ver
         raise HTTPException(status_code=503, detail="Database is busy. Please try again later.") from e
 
     summary_counter = Counter(t.status for t in trials_dict.values())
-    summary = {status.value: summary_counter.get(status.value, 0) for status in JobStatus}
+    summary = {status.value: summary_counter.get(status, 0) for status in JobStatus}
     trials = [
         TrialResponse(
-            id=tid,
-            trial_id=str(tid),
+            id=str(tid),
             status=t.status,
             ntomp=t.config.ntomp,
             np=t.config.np,
@@ -153,7 +151,7 @@ async def delete_tuner_run(job_id: str, _: Annotated[HTTPBasicCredentials, Depen
 
     cancelled = await run_in_threadpool(cancel_job, job_id)
     await run_in_threadpool(delete_job, job_id)
-    cleanup_tmp_files(job_id)
+    cleanup_job_files(job_id)
 
     logger.info("Deleted job %s: cancelled=%s", job_id, cancelled)
     return APIResponse(

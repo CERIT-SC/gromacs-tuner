@@ -219,7 +219,7 @@ def cancel_job(job_id: str) -> bool:
     return True
 
 
-def sync_job_status(job_id: str) -> str | None:
+def sync_job_status(job_id: str) -> JobStatus | None:
     """Sync job status - checks if background thread is still running."""
     job = get_job(job_id)
     if not job:

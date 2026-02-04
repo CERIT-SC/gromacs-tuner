@@ -19,7 +19,7 @@ def create_job(id: str, type: str, extra_args: str | None = None) -> None:
         session.commit()
 
 
-def update_job_status(id: str, status: str, error: str | None = None) -> bool:
+def update_job_status(id: str, status: JobStatus, error: str | None = None) -> bool:
     """Update job status and optionally error message."""
     with get_session() as session:
         if job := session.execute(select(Job).where(Job.id == id)).scalar_one_or_none():
@@ -65,7 +65,7 @@ def create_trial_result(
         return trial.id
 
 
-def update_trial_result(trial_id: int, status: str, performance: float | None) -> bool:
+def update_trial_result(trial_id: int, status: JobStatus, performance: float | None) -> bool:
     """Update a trial's status and performance."""
     with get_session() as session:
         if trial := session.execute(select(Trial).where(Trial.id == trial_id)).scalar_one_or_none():

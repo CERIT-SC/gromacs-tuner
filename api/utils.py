@@ -24,10 +24,10 @@ _EXTRA_ARGS_FORBIDDEN_RE = re.compile(r"[;&|`$()<>]")
 _EXTRA_ARGS_FORBIDDEN_FLAGS = {"-deffnm", "-s", "-nsteps", "-ntomp", "-np", "-nb", "-pme"}
 
 
-def cleanup_tmp_files(job_id: str, directory: Path = TPR_DIR) -> None:
+def cleanup_job_files(job_id: str) -> None:
     """Remove temporary files associated with a job ID."""
     # Remove TPR file
-    tpr_file = directory / f"{job_id}_md.tpr"
+    tpr_file = TPR_DIR / f"{job_id}_md.tpr"
     if tpr_file.exists():
         try:
             tpr_file.unlink()

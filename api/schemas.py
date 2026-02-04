@@ -22,7 +22,7 @@ class TrialInfo:
     """Information about a single trial."""
 
     config: TrialConfig
-    status: str
+    status: JobStatus
     performance: float | None = None
 
 
@@ -30,9 +30,8 @@ class TrialInfo:
 class TrialResponse:
     """Trial data for API responses."""
 
-    id: int
-    trial_id: str
-    status: str
+    id: str
+    status: JobStatus
     ntomp: int
     np: int
     nb: str
@@ -46,7 +45,7 @@ class JobStatusResponse:
     """Job status response for API."""
 
     id: str
-    status: str
+    status: JobStatus
     summary: dict[str, int]
     trials: list[TrialResponse]
     cluster_resources: str

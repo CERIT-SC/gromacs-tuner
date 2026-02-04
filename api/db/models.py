@@ -4,11 +4,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import JSON, ForeignKey, String, create_engine, event
+from sqlalchemy import JSON, Enum, ForeignKey, String, create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
 from api.config import DB_PATH, TPR_DIR
 from api.gromacs.config import TrialConfig
+from api.schemas import JobStatus
 
 
 class Base(DeclarativeBase):
@@ -23,9 +24,7 @@ class Job(Base):
     __tablename__ = "jobs"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, nullable=False)
-    type: Mapped[str] = mapped_column(String, nullable=False)
-    status: Mapped[str] = mapped_column(String, nullable=False, index=True)
-    extra_args: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[JobStatus] = mapped_column(Enum(JobStatus, native_enum=False), nullable=False, index=True)
     total_configs: Mapped[int] = mapped_column(default=0)
     error: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc))
@@ -53,7 +52,7 @@ class Trial(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     job_id: Mapped[str] = mapped_column(String, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False, index=True)
     config_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
-    status: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[JobStatus] = mapped_column(Enum(JobStatus, native_enum=False), nullable=False)
     performance: Mapped[float | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc))
 
