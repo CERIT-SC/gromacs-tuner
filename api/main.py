@@ -152,7 +152,7 @@ async def delete_tuner_run(job_id: str, _: Annotated[HTTPBasicCredentials, Depen
 
     cancelled = await run_in_threadpool(cancel_job, job_id)
     await run_in_threadpool(delete_job, job_id)
-    cleanup_job_files(job_id)
+    await run_in_threadpool(cleanup_job_files, job_id)
 
     logger.info("Deleted job %s: cancelled=%s", job_id, cancelled)
     return APIResponse(

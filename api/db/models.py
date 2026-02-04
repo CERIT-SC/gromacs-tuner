@@ -25,7 +25,6 @@ class Job(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, nullable=False)
     status: Mapped[JobStatus] = mapped_column(Enum(JobStatus, native_enum=False), nullable=False, index=True)
-    total_configs: Mapped[int] = mapped_column(default=0)
     error: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(

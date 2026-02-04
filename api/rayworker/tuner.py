@@ -5,7 +5,7 @@ import threading
 from typing import Any
 
 import ray
-from sqlalchemy import select
+from ray.exceptions import RayTaskError
 
 from api.config import (
     EARLY_STOP_BASELINE_TRIALS,
@@ -14,7 +14,6 @@ from api.config import (
     RUNTIME_WORKDIR,
 )
 from api.db import init_db
-from api.db.models import Job, get_session
 from api.db.operations import (
     create_job,
     create_trial_result,
@@ -148,7 +147,7 @@ def _process_trial_results(
             else:
                 logger.warning("Trial %d returned no result", trial_id)
                 update_trial_result(trial_id, JobStatus.ERROR, None)
-        except Exception as e:
+        except RayTaskError as e:
             logger.warning("Trial %d failed: %s", trial_id, e)
             update_trial_result(trial_id, JobStatus.ERROR, None)
 
@@ -160,10 +159,6 @@ def _run_tuning_async(job_id: str, extra_args: str = "", nsteps: int = 25_000) -
     try:
         _ensure_ray_initialized()
         all_configs = TrialConfig.generate_all_configs()
-        with get_session() as session:
-            if job := session.execute(select(Job).where(Job.id == job_id)).scalar_one_or_none():
-                job.total_configs = len(all_configs)
-                session.commit()
         update_job_status(job_id, JobStatus.RUNNING)
 
         trial_configs: list[TrialConfigEntry] = []
