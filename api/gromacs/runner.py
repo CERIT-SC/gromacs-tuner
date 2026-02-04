@@ -18,6 +18,7 @@ from api.config import (
     EARLY_STOP_WARMUP_SECONDS,
     EARLY_STOP_WARMUP_STEPS,
     JOBS_DIR,
+    TPR_DIR,
 )
 from api.gromacs.config import TrialConfig
 from api.utils import tail
@@ -27,7 +28,6 @@ logger = logging.getLogger(__name__)
 
 def run_mdrun(
     config: TrialConfig,
-    tpr_path: str,
     trial_id: str,
     job_id: str,
     extra_args: str = "",
@@ -39,7 +39,6 @@ def run_mdrun(
 
     Args:
         config: Trial configuration
-        tpr_path: Path to TPR file
         trial_id: Unique trial identifier
         job_id: Parent job identifier
         extra_args: Additional mdrun arguments
@@ -50,6 +49,7 @@ def run_mdrun(
         Tuple of (performance_ns_day, steps_per_sec, early_stopped).
         Returns (0.0, 0.0, False) on failure.
     """
+    tpr_path = str(TPR_DIR / f"{job_id}_md.tpr")
     trial_dir = JOBS_DIR / job_id / trial_id
     trial_dir.mkdir(parents=True, exist_ok=True)
 

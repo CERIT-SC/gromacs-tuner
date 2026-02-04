@@ -1,6 +1,6 @@
 """Common types and enums for the GROMACS tuner API."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
@@ -22,19 +22,8 @@ class TrialInfo:
     """Information about a single trial."""
 
     config: TrialConfig
-    status: str
+    status: JobStatus
     performance: float | None = None
-
-
-@dataclass
-class JobInfo:
-    """Information about a tuning job."""
-
-    tpr_hash: str
-    total: int
-    status: str = JobStatus.RUNNING
-    trials: dict[str, TrialInfo] = field(default_factory=dict)
-    error: str | None = None
 
 
 @dataclass
@@ -42,7 +31,7 @@ class TrialResponse:
     """Trial data for API responses."""
 
     id: str
-    status: str
+    status: JobStatus
     ntomp: int
     np: int
     nb: str
@@ -55,8 +44,8 @@ class TrialResponse:
 class JobStatusResponse:
     """Job status response for API."""
 
-    tuner_run_id: str
-    job_status: str
+    id: str
+    status: JobStatus
     summary: dict[str, int]
     trials: list[TrialResponse]
     cluster_resources: str
@@ -65,8 +54,8 @@ class JobStatusResponse:
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for API response."""
         result = {
-            "tuner_run_id": self.tuner_run_id,
-            "status": self.job_status,
+            "id": self.id,
+            "status": self.status,
             "summary": self.summary,
             "trials": [vars(t) for t in self.trials],
             "cluster_resources": self.cluster_resources,

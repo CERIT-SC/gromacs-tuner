@@ -2,10 +2,8 @@ import logging
 import secrets
 import shutil
 import uuid
-import zipfile
 from collections import Counter
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from typing import Annotated, Any
 
 import yaml
@@ -18,16 +16,13 @@ from starlette.concurrency import run_in_threadpool
 
 from api.config import MAX_UPLOAD_SIZE, TPR_DIR, TUNER_PASSWORD, TUNER_USER
 from api.db.operations import (
-    delete_incomplete_trials_by_job_id,
     delete_job,
     get_job,
-    get_jobs_by_status,
     get_trials_by_job_id,
-    get_trials_by_tpr_hash,
 )
 from api.rayworker import cancel_job, submit_tuning_job, sync_job_status
 from api.schemas import JobStatus, JobStatusResponse, TrialResponse
-from api.utils import cleanup_tmp_files, get_cluster_status, sanitize_extra_args
+from api.utils import cleanup_job_files, get_cluster_status, sanitize_extra_args
 
 logger = logging.getLogger(__name__)
 
@@ -80,27 +75,25 @@ async def create_tuner_run(
     extra_args: Annotated[str, Form(description="Extra GROMACS arguments")] = "",
 ) -> APIResponse:
     """Start a new hyperparameter tuning run with a .tpr file."""
-    _validate_upload(file, ".tpr")
-    file_path = TPR_DIR / f"{uuid.uuid4()}_md.tpr"
-    await run_in_threadpool(_save_upload, file, file_path)
-
     try:
         sanitized_args = sanitize_extra_args(extra_args)
     except (ValidationError, ValueError) as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
+    _validate_upload(file, ".tpr")
     job_id = str(uuid.uuid4())
-    cleanup_tmp_files(job_id)
+    file_path = TPR_DIR / f"{job_id}_md.tpr"
+    await run_in_threadpool(_save_upload, file, file_path)
+
     try:
-        submit_tuning_job(job_id, str(file_path), job_type="standard", extra_args=sanitized_args, nsteps=nsteps)
+        submit_tuning_job(job_id, extra_args=sanitized_args, nsteps=nsteps)
     except Exception as e:
         logger.exception("Failed to submit tuning job %s", job_id)
+        await run_in_threadpool(cleanup_job_files, job_id)
         raise HTTPException(status_code=500, detail=f"Failed to submit job: {e}") from e
 
     logger.info("Started tuning job %s", job_id)
-    return APIResponse(
-        success=True, data={"tuner_run_id": job_id, "status": JobStatus.PENDING}, message="Tuning job started"
-    )
+    return APIResponse(success=True, data={"id": job_id, "status": JobStatus.PENDING}, message="Tuning job started")
 
 
 @app.get("/api/tuner_runs/{job_id}/status")
@@ -115,20 +108,16 @@ async def get_status(job_id: str, _: Annotated[HTTPBasicCredentials, Depends(ver
         if not job:
             raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
 
-        trials_dict = (
-            await run_in_threadpool(get_trials_by_tpr_hash, job.tpr_hash)
-            if job.tpr_hash
-            else await run_in_threadpool(get_trials_by_job_id, job_id)
-        )
+        trials_dict = await run_in_threadpool(get_trials_by_job_id, job_id)
     except OperationalError as e:
-        logger.error("Database timeout for job %s: %s", job_id, e)
+        logger.exception("Database timeout for job %s", job_id)
         raise HTTPException(status_code=503, detail="Database is busy. Please try again later.") from e
 
     summary_counter = Counter(t.status for t in trials_dict.values())
-    summary = {status.value: summary_counter.get(status.value, 0) for status in JobStatus}
+    summary = {status.value: summary_counter.get(status, 0) for status in JobStatus}
     trials = [
         TrialResponse(
-            id=tid,
+            id=str(tid),
             status=t.status,
             ntomp=t.config.ntomp,
             np=t.config.np,
@@ -144,57 +133,14 @@ async def get_status(job_id: str, _: Annotated[HTTPBasicCredentials, Depends(ver
     return APIResponse(
         success=True,
         data=JobStatusResponse(
-            tuner_run_id=job_id,
-            job_status=job.status,
+            id=job_id,
+            status=job.status,
             summary=summary,
             trials=trials,
             cluster_resources=cluster_resources,
             error=job.error,
         ).to_dict(),
         message="Status retrieved",
-    )
-
-
-@app.post("/api/custom_run")
-async def run_custom_single_endpoint(
-    _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)],
-    file: Annotated[UploadFile, File()],
-    extra_args: Annotated[str, Form(description="Extra GROMACS arguments")] = "",
-) -> APIResponse:
-    """Run a custom GROMACS tuning job with extra arguments."""
-    _validate_upload(file, ".zip")
-
-    try:
-        sanitized_args = sanitize_extra_args(extra_args)
-    except (ValidationError, ValueError) as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-
-    with TemporaryDirectory() as tmpdir:
-        tmpdir_path = Path(tmpdir)
-        zip_path = tmpdir_path / "input.zip"
-        await run_in_threadpool(_save_upload, file, zip_path)
-        with zipfile.ZipFile(zip_path, "r") as z:
-            z.extractall(tmpdir_path)
-
-        tpr_files = list(tmpdir_path.glob("*.tpr"))
-        if not tpr_files:
-            raise HTTPException(status_code=400, detail="Zip must contain at least one .tpr file")
-
-        dest = TPR_DIR / f"{uuid.uuid4()}_custom.tpr"
-        TPR_DIR.mkdir(parents=True, exist_ok=True)
-        shutil.copy(tpr_files[0], dest)
-
-    job_id = str(uuid.uuid4())
-    cleanup_tmp_files(job_id)
-    try:
-        submit_tuning_job(job_id, str(dest), job_type="custom", extra_args=sanitized_args)
-    except Exception as e:
-        logger.exception("Failed to submit custom job %s", job_id)
-        raise HTTPException(status_code=500, detail=f"Failed to submit job: {e}") from e
-
-    logger.info("Started custom job %s", job_id)
-    return APIResponse(
-        success=True, data={"tuner_run_id": job_id, "status": JobStatus.PENDING}, message="Custom job started"
     )
 
 
@@ -205,14 +151,13 @@ async def delete_tuner_run(job_id: str, _: Annotated[HTTPBasicCredentials, Depen
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
 
     cancelled = await run_in_threadpool(cancel_job, job_id)
-    deleted_db_rows = await run_in_threadpool(delete_incomplete_trials_by_job_id, job_id)
     await run_in_threadpool(delete_job, job_id)
-    cleanup_tmp_files(job_id)
+    await run_in_threadpool(cleanup_job_files, job_id)
 
-    logger.info("Deleted job %s: cancelled=%s, db_rows=%d", job_id, cancelled, deleted_db_rows)
+    logger.info("Deleted job %s: cancelled=%s", job_id, cancelled)
     return APIResponse(
         success=True,
-        data={"tuner_run_id": job_id, "deleted_db_rows": deleted_db_rows, "cancelled": cancelled},
+        data={"id": job_id, "cancelled": cancelled},
         message="Tuning job deleted",
     )
 
@@ -221,29 +166,6 @@ async def delete_tuner_run(job_id: str, _: Annotated[HTTPBasicCredentials, Depen
 async def health_check() -> APIResponse:
     """Health check endpoint."""
     return APIResponse(success=True, data={"status": "ok"}, message="API is healthy")
-
-
-async def _list_jobs(statuses: list[str], key: str, message: str) -> APIResponse:
-    """List jobs by status."""
-    try:
-        jobs = await run_in_threadpool(get_jobs_by_status, statuses)
-    except OperationalError as e:
-        raise HTTPException(status_code=503, detail="Database is busy. Please try again later.") from e
-    return APIResponse(success=True, data={key: [j.job_id for j in jobs]}, message=message)
-
-
-@app.get("/api/tuner_runs")
-async def list_tuner_runs(_: Annotated[HTTPBasicCredentials, Depends(verify_credentials)]) -> APIResponse:
-    """List all active tuning runs (PENDING or RUNNING)."""
-    return await _list_jobs([JobStatus.PENDING.value, JobStatus.RUNNING.value], "active_jobs", "Active jobs listed")
-
-
-@app.get("/api/completed_jobs")
-async def list_completed_jobs(_: Annotated[HTTPBasicCredentials, Depends(verify_credentials)]) -> APIResponse:
-    """List all completed jobs from the database."""
-    return await _list_jobs(
-        [JobStatus.TERMINATED.value, JobStatus.ERROR.value], "completed_jobs", "Completed jobs listed"
-    )
 
 
 @app.get("/openapi.json", include_in_schema=False)

@@ -1,7 +1,5 @@
 """GROMACS configuration generation and validation."""
 
-import hashlib
-import json
 from dataclasses import dataclass
 from itertools import product
 from typing import Any
@@ -39,12 +37,6 @@ class TrialConfig:
     def num_gpus(self) -> int:
         """Total number of GPUs required for this config."""
         return int(self.nb == "gpu" or self.pme == "gpu")
-
-    @property
-    def hash(self) -> str:
-        """Generate a deterministic hash for a config (excluding runtime fields)."""
-        normalized = {"ntomp": self.ntomp, "np": self.np, "nb": self.nb, "pme": self.pme}
-        return hashlib.sha256(json.dumps(normalized, sort_keys=True).encode()).hexdigest()[:16]
 
     @classmethod
     def generate_all_configs(cls) -> list["TrialConfig"]:
