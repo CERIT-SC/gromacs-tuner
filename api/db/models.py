@@ -1,12 +1,13 @@
 """Database connection and ORM models for the GROMACS tuner."""
 
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
-from sqlalchemy import JSON, String, create_engine, event
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
+from sqlalchemy import JSON, ForeignKey, String, create_engine, event
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
-from api.config import DB_PATH
+from api.config import DB_PATH, TPR_DIR
 from api.gromacs.config import TrialConfig
 
 
@@ -21,36 +22,27 @@ class Job(Base):
 
     __tablename__ = "jobs"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    job_id: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
-    ray_job_id: Mapped[str | None] = mapped_column(String, nullable=True)
-    job_type: Mapped[str] = mapped_column(String, nullable=False)
-    tpr_path: Mapped[str] = mapped_column(String, nullable=False)
-    total_configs: Mapped[int] = mapped_column(default=0)
+    id: Mapped[str] = mapped_column(String, primary_key=True, nullable=False)
+    type: Mapped[str] = mapped_column(String, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False, index=True)
-    error: Mapped[str | None] = mapped_column(String, nullable=True)
     extra_args: Mapped[str | None] = mapped_column(String, nullable=True)
+    total_configs: Mapped[int] = mapped_column(default=0)
+    error: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )
 
-    def to_dict(self) -> dict[str, Any]:
-        """Convert the job object to a dictionary."""
-        return {
-            "id": self.id,
-            "job_id": self.job_id,
-            "ray_job_id": self.ray_job_id,
-            "job_type": self.job_type,
-            "tpr_path": self.tpr_path,
-            "total_configs": self.total_configs,
-            "status": self.status,
-            "error": self.error,
-            "extra_args": self.extra_args,
-            "created_at": self.created_at,
-            "updated_at": self.updated_at,
-        }
+    # Relationship with trials - cascade delete
+    trials: Mapped[list["Trial"]] = relationship(
+        "Trial", back_populates="job", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+    @property
+    def tpr_path(self) -> Path:
+        """Get the TPR file path for this job."""
+        return TPR_DIR / f"{self.id}_md.tpr"
 
 
 class Trial(Base):
@@ -59,12 +51,14 @@ class Trial(Base):
     __tablename__ = "trials"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    job_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
-    trial_id: Mapped[str] = mapped_column(String, nullable=False)
+    job_id: Mapped[str] = mapped_column(String, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False, index=True)
     config_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False)
     performance: Mapped[float | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc))
+
+    # Relationship with job
+    job: Mapped["Job"] = relationship("Job", back_populates="trials")
 
     @property
     def config(self) -> TrialConfig:

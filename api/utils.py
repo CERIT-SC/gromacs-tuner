@@ -26,17 +26,16 @@ _EXTRA_ARGS_FORBIDDEN_FLAGS = {"-deffnm", "-s", "-nsteps", "-ntomp", "-np", "-nb
 
 def cleanup_tmp_files(job_id: str, directory: Path = TPR_DIR) -> None:
     """Remove temporary files associated with a job ID."""
-    for path in directory.glob(f"{job_id}*"):
+    # Remove TPR file
+    tpr_file = directory / f"{job_id}_md.tpr"
+    if tpr_file.exists():
         try:
-            is_dir = path.is_dir()
-            if is_dir:
-                shutil.rmtree(path)
-            else:
-                path.unlink()
-            logger.info("Deleted %s: %s", "directory" if is_dir else "file", path)
+            tpr_file.unlink()
+            logger.info("Deleted TPR file: %s", tpr_file)
         except OSError:
-            logger.exception("Failed to delete %s", path)
+            logger.exception("Failed to delete %s", tpr_file)
 
+    # Remove trial directory
     trial_job_dir = JOBS_DIR / job_id
     if trial_job_dir.is_dir():
         try:
@@ -92,27 +91,35 @@ def get_cluster_status() -> str:
 
 
 def tail(file: Path | str, n: int = 10) -> str:
-    """Read last n lines of a file efficiently."""
+    """
+    Read last n lines of a file efficiently.
+
+    Returns empty string if file doesn't exist.
+    """
     file_path = Path(file) if isinstance(file, str) else file
-    with file_path.open("rb") as f:
-        f.seek(0, os.SEEK_END)
-        file_size = f.tell()
-        if file_size == 0:
-            return ""
+    try:
+        with file_path.open("rb") as f:
+            f.seek(0, os.SEEK_END)
+            file_size = f.tell()
+            if file_size == 0:
+                return ""
 
-        lines_found: deque[bytes] = deque()
-        pos = file_size
-        while pos > 0 and len(lines_found) < n:
-            chunk_start = max(0, pos - 8192)
-            f.seek(chunk_start)
-            chunk = f.read(pos - chunk_start)
-            chunk_lines = chunk.split(b"\n")
-            if lines_found and chunk_lines:
-                lines_found[0] = chunk_lines.pop() + lines_found[0]
-            lines_found.extendleft(reversed(chunk_lines))
-            pos = chunk_start
+            lines_found: deque[bytes] = deque()
+            pos = file_size
+            while pos > 0 and len(lines_found) < n:
+                chunk_start = max(0, pos - 8192)
+                f.seek(chunk_start)
+                chunk = f.read(pos - chunk_start)
+                chunk_lines = chunk.split(b"\n")
+                if lines_found and chunk_lines:
+                    lines_found[0] = chunk_lines.pop() + lines_found[0]
+                lines_found.extendleft(reversed(chunk_lines))
+                pos = chunk_start
 
-        return b"\n".join(list(lines_found)[-n:]).decode("utf-8", "replace")
+            return b"\n".join(list(lines_found)[-n:]).decode("utf-8", "replace")
+    except FileNotFoundError:
+        logger.debug("File not found: %s", file_path)
+        return ""
 
 
 def sanitize_extra_args(extra_args: str) -> str:

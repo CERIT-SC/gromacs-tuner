@@ -2,7 +2,6 @@
 
 import logging
 import threading
-import uuid
 from typing import Any
 
 import ray
@@ -35,7 +34,7 @@ logger.info("Tuner module initialized")
 _active_jobs: dict[str, threading.Thread] = {}
 _job_lock = threading.Lock()
 
-TrialConfigEntry = tuple[str, TrialConfig]
+TrialConfigEntry = tuple[int, TrialConfig]
 """Represents a queued trial: (trial_id, trial_config)."""
 
 
@@ -49,7 +48,6 @@ def _ensure_ray_initialized() -> None:
 @ray.remote(max_retries=3)
 def _run_single_trial(
     job_id: str,
-    tpr_path: str,
     trial_id: str,
     config: TrialConfig,
     extra_args: str,
@@ -68,7 +66,7 @@ def _run_single_trial(
         best_steps_per_sec,
     )
     performance, steps_per_sec, early_stopped = run_mdrun(
-        config, tpr_path, trial_id, job_id, extra_args, nsteps, best_steps_per_sec
+        config, trial_id, job_id, extra_args, nsteps, best_steps_per_sec
     )
     status = JobStatus.TERMINATED if performance > 0 or early_stopped else JobStatus.ERROR
     logger.info(
@@ -100,19 +98,17 @@ def _order_trial_configs(
 
 def _submit_trials(
     job_id: str,
-    tpr_path: str,
     extra_args: str,
     trials: list[TrialConfigEntry],
     nsteps: int,
     best_steps_per_sec: float,
-) -> dict[ray.ObjectRef, str]:
+) -> dict[ray.ObjectRef, int]:
     """Submit a batch of trials to Ray and return futures map."""
-    future_to_trial: dict[ray.ObjectRef, str] = {}
+    future_to_trial: dict[ray.ObjectRef, int] = {}
     for trial_id, cfg in trials:
         future = _run_single_trial.options(num_cpus=cfg.num_cpus, num_gpus=cfg.num_gpus).remote(
             job_id,
-            tpr_path,
-            trial_id,
+            str(trial_id),
             cfg,
             extra_args,
             nsteps,  # type: ignore[arg-type]
@@ -125,7 +121,7 @@ def _submit_trials(
 
 def _process_trial_results(
     job_id: str,
-    future_to_trial: dict[ray.ObjectRef, str],
+    future_to_trial: dict[ray.ObjectRef, int],
     best_steps_per_sec: float,
 ) -> float:
     """Wait for trials and update database results. Returns updated best_steps_per_sec."""
@@ -141,7 +137,7 @@ def _process_trial_results(
                 early_stopped = res.get("early_stopped", False)
                 perf_value = None if early_stopped else res.get("performance")
                 update_trial_result(
-                    res.get("trial_id", trial_id),
+                    trial_id,
                     res.get("status", JobStatus.ERROR),
                     perf_value,
                 )
@@ -150,30 +146,29 @@ def _process_trial_results(
                     new_best = steps_per_sec
                     logger.info("Job %s: New best steps/sec: %.1f", job_id, new_best)
             else:
-                logger.warning("Trial %s returned no result", trial_id)
+                logger.warning("Trial %d returned no result", trial_id)
                 update_trial_result(trial_id, JobStatus.ERROR, None)
         except Exception as e:
-            logger.warning("Trial %s failed: %s", trial_id, e)
+            logger.warning("Trial %d failed: %s", trial_id, e)
             update_trial_result(trial_id, JobStatus.ERROR, None)
 
     return new_best
 
 
-def _run_tuning_async(job_id: str, tpr_path: str, extra_args: str = "", nsteps: int = 25_000) -> None:
+def _run_tuning_async(job_id: str, extra_args: str = "", nsteps: int = 25_000) -> None:
     """Run grid search tuning in a background thread with early stopping support."""
     try:
         _ensure_ray_initialized()
         all_configs = TrialConfig.generate_all_configs()
         with get_session() as session:
-            if job := session.execute(select(Job).where(Job.job_id == job_id)).scalar_one_or_none():
+            if job := session.execute(select(Job).where(Job.id == job_id)).scalar_one_or_none():
                 job.total_configs = len(all_configs)
                 session.commit()
         update_job_status(job_id, JobStatus.RUNNING)
 
         trial_configs: list[TrialConfigEntry] = []
         for cfg in all_configs:
-            trial_id = str(uuid.uuid4())[:8]
-            create_trial_result(job_id, trial_id, cfg, JobStatus.PENDING, None)
+            trial_id = create_trial_result(job_id, cfg, JobStatus.PENDING, None)
             trial_configs.append((trial_id, cfg))
 
         trial_configs = _order_trial_configs(trial_configs)
@@ -184,13 +179,13 @@ def _run_tuning_async(job_id: str, tpr_path: str, extra_args: str = "", nsteps: 
         remaining_trials = trial_configs[baseline_count:]
 
         if baseline_trials:
-            future_to_trial = _submit_trials(job_id, tpr_path, extra_args, baseline_trials, nsteps, best_steps_per_sec)
+            future_to_trial = _submit_trials(job_id, extra_args, baseline_trials, nsteps, best_steps_per_sec)
             best_steps_per_sec = _process_trial_results(job_id, future_to_trial, best_steps_per_sec)
 
         batch_size = max(1, EARLY_STOP_BATCH_SIZE)
         for idx in range(0, len(remaining_trials), batch_size):
             batch = remaining_trials[idx : idx + batch_size]
-            future_to_trial = _submit_trials(job_id, tpr_path, extra_args, batch, nsteps, best_steps_per_sec)
+            future_to_trial = _submit_trials(job_id, extra_args, batch, nsteps, best_steps_per_sec)
             best_steps_per_sec = _process_trial_results(job_id, future_to_trial, best_steps_per_sec)
 
         logger.info("All trials completed for job %s (best: %.1f steps/s)", job_id, best_steps_per_sec)
@@ -203,12 +198,10 @@ def _run_tuning_async(job_id: str, tpr_path: str, extra_args: str = "", nsteps: 
             _active_jobs.pop(job_id, None)
 
 
-def submit_tuning_job(
-    job_id: str, tpr_path: str, job_type: str = "standard", extra_args: str = "", nsteps: int = 25_000
-) -> str:
+def submit_tuning_job(job_id: str, type: str = "standard", extra_args: str = "", nsteps: int = 25_000) -> str:
     """Submit a GROMACS tuning job."""
-    create_job(job_id, job_type, tpr_path, extra_args or None)
-    thread = threading.Thread(target=_run_tuning_async, args=(job_id, tpr_path, extra_args, nsteps), daemon=True)
+    create_job(job_id, type, extra_args or None)
+    thread = threading.Thread(target=_run_tuning_async, args=(job_id, extra_args, nsteps), daemon=True)
     with _job_lock:
         _active_jobs[job_id] = thread
     thread.start()

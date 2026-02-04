@@ -16,7 +16,6 @@ from starlette.concurrency import run_in_threadpool
 
 from api.config import MAX_UPLOAD_SIZE, TPR_DIR, TUNER_PASSWORD, TUNER_USER
 from api.db.operations import (
-    delete_incomplete_trials_by_job_id,
     delete_job,
     get_job,
     get_trials_by_job_id,
@@ -77,7 +76,8 @@ async def create_tuner_run(
 ) -> APIResponse:
     """Start a new hyperparameter tuning run with a .tpr file."""
     _validate_upload(file, ".tpr")
-    file_path = TPR_DIR / f"{uuid.uuid4()}_md.tpr"
+    job_id = str(uuid.uuid4())
+    file_path = TPR_DIR / f"{job_id}_md.tpr"
     await run_in_threadpool(_save_upload, file, file_path)
 
     try:
@@ -85,18 +85,15 @@ async def create_tuner_run(
     except (ValidationError, ValueError) as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
-    job_id = str(uuid.uuid4())
     cleanup_tmp_files(job_id)
     try:
-        submit_tuning_job(job_id, str(file_path), job_type="standard", extra_args=sanitized_args, nsteps=nsteps)
+        submit_tuning_job(job_id, type="standard", extra_args=sanitized_args, nsteps=nsteps)
     except Exception as e:
         logger.exception("Failed to submit tuning job %s", job_id)
         raise HTTPException(status_code=500, detail=f"Failed to submit job: {e}") from e
 
     logger.info("Started tuning job %s", job_id)
-    return APIResponse(
-        success=True, data={"tuner_run_id": job_id, "status": JobStatus.PENDING}, message="Tuning job started"
-    )
+    return APIResponse(success=True, data={"id": job_id, "status": JobStatus.PENDING}, message="Tuning job started")
 
 
 @app.get("/api/tuner_runs/{job_id}/status")
@@ -121,6 +118,7 @@ async def get_status(job_id: str, _: Annotated[HTTPBasicCredentials, Depends(ver
     trials = [
         TrialResponse(
             id=tid,
+            trial_id=str(tid),
             status=t.status,
             ntomp=t.config.ntomp,
             np=t.config.np,
@@ -136,8 +134,8 @@ async def get_status(job_id: str, _: Annotated[HTTPBasicCredentials, Depends(ver
     return APIResponse(
         success=True,
         data=JobStatusResponse(
-            tuner_run_id=job_id,
-            job_status=job.status,
+            id=job_id,
+            status=job.status,
             summary=summary,
             trials=trials,
             cluster_resources=cluster_resources,
@@ -154,14 +152,13 @@ async def delete_tuner_run(job_id: str, _: Annotated[HTTPBasicCredentials, Depen
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
 
     cancelled = await run_in_threadpool(cancel_job, job_id)
-    deleted_db_rows = await run_in_threadpool(delete_incomplete_trials_by_job_id, job_id)
     await run_in_threadpool(delete_job, job_id)
     cleanup_tmp_files(job_id)
 
-    logger.info("Deleted job %s: cancelled=%s, db_rows=%d", job_id, cancelled, deleted_db_rows)
+    logger.info("Deleted job %s: cancelled=%s", job_id, cancelled)
     return APIResponse(
         success=True,
-        data={"tuner_run_id": job_id, "deleted_db_rows": deleted_db_rows, "cancelled": cancelled},
+        data={"id": job_id, "cancelled": cancelled},
         message="Tuning job deleted",
     )
 

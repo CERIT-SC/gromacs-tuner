@@ -12,35 +12,33 @@ from api.schemas import JobStatus, TrialInfo
 logger = logging.getLogger(__name__)
 
 
-def create_job(job_id: str, job_type: str, tpr_path: str, extra_args: str | None = None) -> None:
+def create_job(id: str, type: str, extra_args: str | None = None) -> None:
     """Create a new job record with PENDING status."""
     with get_session() as session:
-        session.add(
-            Job(job_id=job_id, job_type=job_type, tpr_path=tpr_path, status=JobStatus.PENDING, extra_args=extra_args)
-        )
+        session.add(Job(id=id, type=type, status=JobStatus.PENDING, extra_args=extra_args))
         session.commit()
 
 
-def update_job_status(job_id: str, status: str, error: str | None = None) -> bool:
+def update_job_status(id: str, status: str, error: str | None = None) -> bool:
     """Update job status and optionally error message."""
     with get_session() as session:
-        if job := session.execute(select(Job).where(Job.job_id == job_id)).scalar_one_or_none():
+        if job := session.execute(select(Job).where(Job.id == id)).scalar_one_or_none():
             job.status, job.error, job.updated_at = status, error, datetime.now(timezone.utc)
             session.commit()
             return True
         return False
 
 
-def get_job(job_id: str) -> Job | None:
+def get_job(id: str) -> Job | None:
     """Get job record by ID."""
     with get_session() as session:
-        return session.execute(select(Job).where(Job.job_id == job_id)).scalar_one_or_none()
+        return session.execute(select(Job).where(Job.id == id)).scalar_one_or_none()
 
 
-def delete_job(job_id: str) -> bool:
+def delete_job(id: str) -> bool:
     """Delete a job record."""
     with get_session() as session:
-        if job := session.execute(select(Job).where(Job.job_id == job_id)).scalar_one_or_none():
+        if job := session.execute(select(Job).where(Job.id == id)).scalar_one_or_none():
             session.delete(job)
             session.commit()
             return True
@@ -49,52 +47,36 @@ def delete_job(job_id: str) -> bool:
 
 def create_trial_result(
     job_id: str,
-    trial_id: str,
     config: TrialConfig,
     status: JobStatus,
     performance: float | None,
-) -> bool:
-    """Create a trial result."""
+) -> int:
+    """Create a trial result. Returns the database trial ID."""
     with get_session() as session:
-        session.add(
-            Trial(
-                job_id=job_id,
-                trial_id=trial_id,
-                config_json=config.to_dict(),
-                status=status,
-                performance=performance,
-            )
+        trial = Trial(
+            job_id=job_id,
+            config_json=config.to_dict(),
+            status=status,
+            performance=performance,
         )
+        session.add(trial)
         session.commit()
-        return True
+        session.refresh(trial)
+        return trial.id
 
 
-def update_trial_result(trial_id: str, status: str, performance: float | None) -> bool:
+def update_trial_result(trial_id: int, status: str, performance: float | None) -> bool:
     """Update a trial's status and performance."""
     with get_session() as session:
-        if trial := session.execute(select(Trial).where(Trial.trial_id == trial_id)).scalar_one_or_none():
+        if trial := session.execute(select(Trial).where(Trial.id == trial_id)).scalar_one_or_none():
             trial.status, trial.performance = status, performance
             session.commit()
             return True
         return False
 
 
-def get_trials_by_job_id(job_id: str) -> dict[str, TrialInfo]:
-    """Get all trials for a specific job, mapped by trial_id."""
+def get_trials_by_job_id(job_id: str) -> dict[int, TrialInfo]:
+    """Get all trials for a specific job, mapped by trial ID."""
     with get_session() as session:
         trials = session.execute(select(Trial).where(Trial.job_id == job_id)).scalars().all()
-        return {t.trial_id: TrialInfo(config=t.config, status=t.status, performance=t.performance) for t in trials}
-
-
-def delete_incomplete_trials_by_job_id(job_id: str) -> int:
-    """Delete non-terminated trials for a job. Returns count of deleted rows."""
-    with get_session() as session:
-        trials = (
-            session.execute(select(Trial).where(Trial.job_id == job_id, Trial.status != JobStatus.TERMINATED))
-            .scalars()
-            .all()
-        )
-        for trial in trials:
-            session.delete(trial)
-        session.commit()
-        return len(trials)
+        return {t.id: TrialInfo(config=t.config, status=t.status, performance=t.performance) for t in trials}
