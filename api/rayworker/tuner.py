@@ -5,7 +5,7 @@ import threading
 from typing import Any
 
 import ray
-from ray.exceptions import RayTaskError
+from ray.exceptions import RayError
 
 from api.config import (
     EARLY_STOP_BASELINE_TRIALS,
@@ -30,8 +30,81 @@ logger = logging.getLogger(__name__)
 init_db()
 logger.info("Tuner module initialized")
 
-_active_jobs: dict[str, threading.Thread] = {}
-_job_lock = threading.Lock()
+
+class JobState:
+    """Encapsulates state for a single running job."""
+
+    def __init__(self, thread: threading.Thread) -> None:
+        """Initialize job state with its background thread."""
+        self.thread = thread
+        self.cancelled = threading.Event()
+        self.futures: set[ray.ObjectRef] = set()
+
+
+class JobContext:
+    """Manages active job state with thread-safe operations."""
+
+    def __init__(self) -> None:
+        """Initialize the job context manager."""
+        self._jobs: dict[str, JobState] = {}
+        self._lock = threading.Lock()
+
+    def add_job(self, job_id: str, thread: threading.Thread) -> None:
+        """Add a new job to the context."""
+        with self._lock:
+            self._jobs[job_id] = JobState(thread)
+
+    def remove_job(self, job_id: str) -> None:
+        """Remove a job from the context."""
+        with self._lock:
+            self._jobs.pop(job_id, None)
+
+    def is_cancelled(self, job_id: str) -> bool:
+        """Check if a job has been cancelled."""
+        with self._lock:
+            state = self._jobs.get(job_id)
+            return state is not None and state.cancelled.is_set()
+
+    def mark_cancelled(self, job_id: str) -> threading.Event:
+        """Mark a job as cancelled."""
+        with self._lock:
+            state = self._jobs.get(job_id)
+            if state:
+                state.cancelled.set()
+                return state.cancelled
+            # Job might have already finished, create event anyway
+            event = threading.Event()
+            event.set()
+            return event
+
+    def add_futures(self, job_id: str, futures: set[ray.ObjectRef]) -> None:
+        """Add Ray futures to a job's tracking set."""
+        with self._lock:
+            state = self._jobs.get(job_id)
+            if state:
+                state.futures.update(futures)
+
+    def remove_future(self, job_id: str, future: ray.ObjectRef) -> None:
+        """Remove a completed future from a job's tracking set."""
+        with self._lock:
+            state = self._jobs.get(job_id)
+            if state:
+                state.futures.discard(future)
+
+    def get_futures(self, job_id: str) -> set[ray.ObjectRef]:
+        """Get a copy of all active futures for a job."""
+        with self._lock:
+            state = self._jobs.get(job_id)
+            return state.futures.copy() if state else set()
+
+    def is_thread_alive(self, job_id: str) -> bool:
+        """Check if a job's background thread is still running."""
+        with self._lock:
+            state = self._jobs.get(job_id)
+            return state is not None and state.thread.is_alive()
+
+
+_job_context = JobContext()
 
 TrialConfigEntry = tuple[int, TrialConfig]
 """Represents a queued trial: (trial_id, trial_config)."""
@@ -115,6 +188,10 @@ def _submit_trials(
         )
         future_to_trial[future] = trial_id
         update_trial_result(trial_id, JobStatus.RUNNING, None)
+
+    # Track active futures for cancellation
+    _job_context.add_futures(job_id, set(future_to_trial.keys()))
+
     return future_to_trial
 
 
@@ -147,9 +224,12 @@ def _process_trial_results(
             else:
                 logger.warning("Trial %d returned no result", trial_id)
                 update_trial_result(trial_id, JobStatus.ERROR, None)
-        except RayTaskError as e:
+        except RayError as e:
             logger.warning("Trial %d failed: %s", trial_id, e)
             update_trial_result(trial_id, JobStatus.ERROR, None)
+        finally:
+            # Remove completed future from active set
+            _job_context.remove_future(job_id, done[0])
 
     return new_best
 
@@ -161,10 +241,7 @@ def _run_tuning_async(job_id: str, extra_args: str = "", nsteps: int = 25_000) -
         all_configs = TrialConfig.generate_all_configs()
         update_job_status(job_id, JobStatus.RUNNING)
 
-        trial_configs: list[TrialConfigEntry] = []
-        for cfg in all_configs:
-            trial_id = create_trial_result(job_id, cfg, JobStatus.PENDING, None)
-            trial_configs.append((trial_id, cfg))
+        trial_configs = [(create_trial_result(job_id, cfg, JobStatus.PENDING, None), cfg) for cfg in all_configs]
 
         trial_configs = _order_trial_configs(trial_configs)
         best_steps_per_sec = 0.0
@@ -179,6 +256,9 @@ def _run_tuning_async(job_id: str, extra_args: str = "", nsteps: int = 25_000) -
 
         batch_size = max(1, EARLY_STOP_BATCH_SIZE)
         for idx in range(0, len(remaining_trials), batch_size):
+            if _job_context.is_cancelled(job_id):
+                logger.info("Job %s cancelled, skipping remaining trials", job_id)
+                break
             batch = remaining_trials[idx : idx + batch_size]
             future_to_trial = _submit_trials(job_id, extra_args, batch, nsteps, best_steps_per_sec)
             best_steps_per_sec = _process_trial_results(job_id, future_to_trial, best_steps_per_sec)
@@ -189,16 +269,14 @@ def _run_tuning_async(job_id: str, extra_args: str = "", nsteps: int = 25_000) -
         logger.exception("Tuning job %s failed", job_id)
         update_job_status(job_id, JobStatus.ERROR, str(e))
     finally:
-        with _job_lock:
-            _active_jobs.pop(job_id, None)
+        _job_context.remove_job(job_id)
 
 
 def submit_tuning_job(job_id: str, extra_args: str = "", nsteps: int = 25_000) -> str:
     """Submit a GROMACS tuning job."""
     create_job(job_id)
     thread = threading.Thread(target=_run_tuning_async, args=(job_id, extra_args, nsteps), daemon=True)
-    with _job_lock:
-        _active_jobs[job_id] = thread
+    _job_context.add_job(job_id, thread)
     thread.start()
     logger.info("Submitted tuning job %s", job_id)
     return job_id
@@ -209,6 +287,21 @@ def cancel_job(job_id: str) -> bool:
     if not get_job(job_id):
         logger.warning("Cannot cancel: job %s not found", job_id)
         return False
+
+    # Set cancellation flag to prevent new trials from being submitted
+    _job_context.mark_cancelled(job_id)
+
+    # Cancel any actively running Ray tasks
+    futures_to_cancel = _job_context.get_futures(job_id)
+
+    if futures_to_cancel:
+        logger.info("Cancelling %d active trials for job %s", len(futures_to_cancel), job_id)
+        for future in futures_to_cancel:
+            try:
+                ray.cancel(future, force=False)
+            except Exception as e:
+                logger.warning("Failed to cancel trial for job %s: %s", job_id, e)
+
     update_job_status(job_id, JobStatus.ERROR, "Cancelled by user")
     logger.info("Marked job %s as cancelled", job_id)
     return True
@@ -223,10 +316,11 @@ def sync_job_status(job_id: str) -> JobStatus | None:
     if job.status in (JobStatus.TERMINATED, JobStatus.ERROR):
         return job.status
 
-    with _job_lock:
-        thread = _active_jobs.get(job_id)
-        if thread and thread.is_alive():
-            return JobStatus.RUNNING
+    if _job_context.is_cancelled(job_id):
+        return JobStatus.ERROR
+
+    if _job_context.is_thread_alive(job_id):
+        return JobStatus.RUNNING
 
     if job.status == JobStatus.RUNNING:
         update_job_status(job_id, JobStatus.ERROR, "Job thread terminated unexpectedly")

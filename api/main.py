@@ -110,7 +110,7 @@ async def get_status(job_id: str, _: Annotated[HTTPBasicCredentials, Depends(ver
 
         trials_dict = await run_in_threadpool(get_trials_by_job_id, job_id)
     except OperationalError as e:
-        logger.error("Database timeout for job %s: %s", job_id, e)
+        logger.exception("Database timeout for job %s", job_id)
         raise HTTPException(status_code=503, detail="Database is busy. Please try again later.") from e
 
     summary_counter = Counter(t.status for t in trials_dict.values())
