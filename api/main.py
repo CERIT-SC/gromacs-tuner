@@ -75,20 +75,21 @@ async def create_tuner_run(
     extra_args: Annotated[str, Form(description="Extra GROMACS arguments")] = "",
 ) -> APIResponse:
     """Start a new hyperparameter tuning run with a .tpr file."""
+    try:
+        sanitized_args = sanitize_extra_args(extra_args)
+    except (ValidationError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
     _validate_upload(file, ".tpr")
     job_id = str(uuid.uuid4())
     file_path = TPR_DIR / f"{job_id}_md.tpr"
     await run_in_threadpool(_save_upload, file, file_path)
 
     try:
-        sanitized_args = sanitize_extra_args(extra_args)
-    except (ValidationError, ValueError) as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-
-    try:
-        submit_tuning_job(job_id, type="standard", extra_args=sanitized_args, nsteps=nsteps)
+        submit_tuning_job(job_id, extra_args=sanitized_args, nsteps=nsteps)
     except Exception as e:
         logger.exception("Failed to submit tuning job %s", job_id)
+        await run_in_threadpool(cleanup_job_files, job_id)
         raise HTTPException(status_code=500, detail=f"Failed to submit job: {e}") from e
 
     logger.info("Started tuning job %s", job_id)

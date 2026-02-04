@@ -12,10 +12,10 @@ from api.schemas import JobStatus, TrialInfo
 logger = logging.getLogger(__name__)
 
 
-def create_job(id: str, type: str, extra_args: str | None = None) -> None:
+def create_job(id: str) -> None:
     """Create a new job record with PENDING status."""
     with get_session() as session:
-        session.add(Job(id=id, type=type, status=JobStatus.PENDING, extra_args=extra_args))
+        session.add(Job(id=id, status=JobStatus.PENDING))
         session.commit()
 
 

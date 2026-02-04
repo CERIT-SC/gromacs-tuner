@@ -198,9 +198,9 @@ def _run_tuning_async(job_id: str, extra_args: str = "", nsteps: int = 25_000) -
             _active_jobs.pop(job_id, None)
 
 
-def submit_tuning_job(job_id: str, type: str = "standard", extra_args: str = "", nsteps: int = 25_000) -> str:
+def submit_tuning_job(job_id: str, extra_args: str = "", nsteps: int = 25_000) -> str:
     """Submit a GROMACS tuning job."""
-    create_job(job_id, type, extra_args or None)
+    create_job(job_id)
     thread = threading.Thread(target=_run_tuning_async, args=(job_id, extra_args, nsteps), daemon=True)
     with _job_lock:
         _active_jobs[job_id] = thread
