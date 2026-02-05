@@ -37,7 +37,6 @@ class TrialResponse:
     nb: str
     pme: str
     performance: float | None
-    type: str | None = None
 
 
 @dataclass

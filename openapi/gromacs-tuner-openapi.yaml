@@ -162,9 +162,6 @@ components:
                   performance:
                     type: number
                     nullable: true
-                  type:
-                    type: string
-                    nullable: true
             cluster_resources:
               type: string
             error:

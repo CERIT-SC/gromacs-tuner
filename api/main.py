@@ -124,7 +124,6 @@ async def get_status(job_id: str, _: Annotated[HTTPBasicCredentials, Depends(ver
             nb=t.config.nb,
             pme=t.config.pme,
             performance=t.performance,
-            type=t.config.type,
         )
         for tid, t in trials_dict.items()
     ]

@@ -15,7 +15,6 @@ class TrialConfig:
     ntomp: int = 0  # Number of OpenMP threads per MPI rank to start (0 is guess)
     nb: str = "auto"  # Calculate non-bonded interactions on: auto, cpu, gpu
     pme: str = "auto"  # Perform PME calculations on: auto, cpu, gpu
-    type: str | None = None  # Type of trial, e.g., "replica_exchange"
 
     @property
     def is_valid(self) -> bool:
@@ -53,12 +52,9 @@ class TrialConfig:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TrialConfig":
         """Create from dictionary."""
-        _allowed = {"ntomp", "np", "nb", "pme", "type"}
+        _allowed = {"ntomp", "np", "nb", "pme"}
         return cls(**{k: data[k] for k in _allowed if k in data})
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
-        result = {"ntomp": self.ntomp, "np": self.np, "nb": self.nb, "pme": self.pme}
-        if self.type:
-            result["type"] = self.type
-        return result
+        return {"ntomp": self.ntomp, "np": self.np, "nb": self.nb, "pme": self.pme}
