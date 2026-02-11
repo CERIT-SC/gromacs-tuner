@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
 
 from api.gromacs.config import TrialConfig
 
@@ -40,25 +39,30 @@ class TrialResponse:
 
 
 @dataclass
+class ClusterResources:
+    """Current Ray cluster resource utilization."""
+
+    total_cpus: int
+    total_gpus: int
+    available_cpus: int
+    available_gpus: int
+
+    @property
+    def used_cpus(self) -> int:
+        """Calculate used CPUs."""
+        return self.total_cpus - self.available_cpus
+
+    @property
+    def used_gpus(self) -> int:
+        """Calculate used GPUs."""
+        return self.total_gpus - self.available_gpus
+
+
+@dataclass
 class JobStatusResponse:
     """Job status response for API."""
 
     id: str
     status: JobStatus
-    summary: dict[str, int]
     trials: list[TrialResponse]
-    cluster_resources: str
     error: str | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary for API response."""
-        result = {
-            "id": self.id,
-            "status": self.status,
-            "summary": self.summary,
-            "trials": [vars(t) for t in self.trials],
-            "cluster_resources": self.cluster_resources,
-        }
-        if self.error:
-            result["error"] = self.error
-        return result
