@@ -101,6 +101,20 @@ paths:
               schema:
                 $ref: "#/components/schemas/SuccessResponseWithHealth"
 
+  /resources:
+    get:
+      summary: Get cluster resources.
+      description: Get current Ray cluster resource utilization.
+      security:
+        - basicAuth: []
+      responses:
+        "200":
+          description: Cluster resources retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponseWithResources"
+
 components:
   securitySchemes:
     basicAuth:
@@ -138,10 +152,6 @@ components:
               type: string
             status:
               type: string
-            summary:
-              type: object
-              additionalProperties:
-                type: integer
             trials:
               type: array
               items:
@@ -162,8 +172,6 @@ components:
                   performance:
                     type: number
                     nullable: true
-            cluster_resources:
-              type: string
             error:
               type: string
               nullable: true
@@ -201,6 +209,40 @@ components:
               type: string
             cancelled:
               type: boolean
+        message:
+          type: string
+        error:
+          type: object
+          nullable: true
+
+    SuccessResponseWithResources:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          description: Cluster resources information.
+          nullable: true
+          properties:
+            total_cpus:
+              type: integer
+              description: Total CPU cores available in the Ray cluster.
+            total_gpus:
+              type: integer
+              description: Total GPUs available in the Ray cluster.
+            used_cpus:
+              type: integer
+              description: CPU cores currently in use across the cluster.
+            used_gpus:
+              type: integer
+              description: GPUs currently in use across the cluster.
+            available_cpus:
+              type: integer
+              description: CPU cores available for new tasks.
+            available_gpus:
+              type: integer
+              description: GPUs available for new tasks.
         message:
           type: string
         error:

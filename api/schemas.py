@@ -40,14 +40,35 @@ class TrialResponse:
 
 
 @dataclass
+class ClusterResources:
+    """Current Ray cluster resource utilization."""
+
+    total_cpus: int
+    total_gpus: int
+    used_cpus: int
+    used_gpus: int
+    available_cpus: int
+    available_gpus: int
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for API response."""
+        return {
+            "total_cpus": self.total_cpus,
+            "total_gpus": self.total_gpus,
+            "used_cpus": self.used_cpus,
+            "used_gpus": self.used_gpus,
+            "available_cpus": self.available_cpus,
+            "available_gpus": self.available_gpus,
+        }
+
+
+@dataclass
 class JobStatusResponse:
     """Job status response for API."""
 
     id: str
     status: JobStatus
-    summary: dict[str, int]
     trials: list[TrialResponse]
-    cluster_resources: str
     error: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -55,9 +76,7 @@ class JobStatusResponse:
         result = {
             "id": self.id,
             "status": self.status,
-            "summary": self.summary,
             "trials": [vars(t) for t in self.trials],
-            "cluster_resources": self.cluster_resources,
         }
         if self.error:
             result["error"] = self.error

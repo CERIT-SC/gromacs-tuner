@@ -10,10 +10,12 @@ import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from pathlib import Path
+from typing import Any
 
 import ray
 
 from api.config import JOBS_DIR, TPR_DIR
+from api.schemas import ClusterResources
 
 logger = logging.getLogger(__name__)
 
@@ -54,40 +56,49 @@ def sha256_of_file(path: Path | str, chunk_size: int = 8192) -> str:
     return hasher.hexdigest()
 
 
-_cluster_status_cache = {"status": "N/A", "time": 0.0}
+_cluster_status_cache: dict[str, Any] = {"data": None, "time": 0.0}
 _cluster_status_executor = ThreadPoolExecutor(max_workers=1)
 CLUSTER_STATUS_TTL = 10.0
 RAY_FETCH_TIMEOUT = 4.0
 
 
-def get_cluster_status() -> str:
+def get_cluster_status() -> ClusterResources | None:
     """Get current Ray cluster resource usage with caching."""
     now = time.time()
     if now - _cluster_status_cache["time"] < CLUSTER_STATUS_TTL:
-        return _cluster_status_cache["status"]
+        return _cluster_status_cache["data"]
 
-    def _fetch() -> str:
+    def _fetch() -> ClusterResources | None:
         try:
             if not ray.is_initialized():
-                return _cluster_status_cache["status"]
+                return None
             total, avail = ray.cluster_resources(), ray.available_resources()
-            used_cpu = int(total.get("CPU", 0) - avail.get("CPU", 0))
-            used_gpu = int(total.get("GPU", 0) - avail.get("GPU", 0))
-            return f"{used_cpu}/{int(total.get('CPU', 0))} CPUs, {used_gpu}/{int(total.get('GPU', 0))} GPUs used"
+            total_cpus = int(total.get("CPU", 0))
+            total_gpus = int(total.get("GPU", 0))
+            used_cpus = total_cpus - int(avail.get("CPU", 0))
+            used_gpus = total_gpus - int(avail.get("GPU", 0))
+            return ClusterResources(
+                total_cpus=total_cpus,
+                total_gpus=total_gpus,
+                used_cpus=used_cpus,
+                used_gpus=used_gpus,
+                available_cpus=total_cpus - used_cpus,
+                available_gpus=total_gpus - used_gpus,
+            )
         except Exception as e:
             logger.exception("Error fetching cluster status: %s", e)
-            return _cluster_status_cache["status"]
+            return None
 
     try:
-        status = _cluster_status_executor.submit(_fetch).result(timeout=RAY_FETCH_TIMEOUT)
+        data = _cluster_status_executor.submit(_fetch).result(timeout=RAY_FETCH_TIMEOUT)
     except TimeoutError:
         logger.warning("ray.cluster_resources() timed out after %.1fs", RAY_FETCH_TIMEOUT)
         _cluster_status_cache["time"] = time.time()
-        return _cluster_status_cache["status"]
+        return _cluster_status_cache["data"]
 
-    _cluster_status_cache["status"] = status
+    _cluster_status_cache["data"] = data
     _cluster_status_cache["time"] = time.time()
-    return status
+    return data
 
 
 def tail(file: Path | str, n: int = 10) -> str:

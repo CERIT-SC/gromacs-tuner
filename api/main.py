@@ -2,7 +2,6 @@ import logging
 import secrets
 import shutil
 import uuid
-from collections import Counter
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -113,8 +112,6 @@ async def get_status(job_id: str, _: Annotated[HTTPBasicCredentials, Depends(ver
         logger.exception("Database timeout for job %s", job_id)
         raise HTTPException(status_code=503, detail="Database is busy. Please try again later.") from e
 
-    summary_counter = Counter(t.status for t in trials_dict.values())
-    summary = {status.value: summary_counter.get(status, 0) for status in JobStatus}
     trials = [
         TrialResponse(
             id=str(tid),
@@ -127,16 +124,13 @@ async def get_status(job_id: str, _: Annotated[HTTPBasicCredentials, Depends(ver
         )
         for tid, t in trials_dict.items()
     ]
-    cluster_resources = await run_in_threadpool(get_cluster_status)
 
     return APIResponse(
         success=True,
         data=JobStatusResponse(
             id=job_id,
             status=job.status,
-            summary=summary,
             trials=trials,
-            cluster_resources=cluster_resources,
             error=job.error,
         ).to_dict(),
         message="Status retrieved",
@@ -158,6 +152,25 @@ async def delete_tuner_run(job_id: str, _: Annotated[HTTPBasicCredentials, Depen
         success=True,
         data={"id": job_id, "cancelled": cancelled},
         message="Tuning job deleted",
+    )
+
+
+@app.get("/api/resources")
+async def get_cluster_resources_endpoint(
+    _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)],
+) -> APIResponse:
+    """Get current Ray cluster resource utilization."""
+    resources = await run_in_threadpool(get_cluster_status)
+    if resources is None:
+        return APIResponse(
+            success=False,
+            data={},
+            message="Cluster resources unavailable - Ray may not be initialized",
+        )
+    return APIResponse(
+        success=True,
+        data=resources.to_dict(),
+        message="Cluster resources retrieved",
     )
 
 
