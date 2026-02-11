@@ -79,8 +79,8 @@ def get_cluster_status() -> ClusterResources | None:
                 available_cpus=int(avail.get("CPU", 0)),
                 available_gpus=int(avail.get("GPU", 0)),
             )
-        except Exception as e:
-            logger.exception("Error fetching cluster status: %s", e)
+        except Exception:
+            logger.exception("Error fetching cluster status.")
             return None
 
     try:

@@ -2,6 +2,7 @@ import logging
 import secrets
 import shutil
 import uuid
+from dataclasses import asdict
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -127,12 +128,14 @@ async def get_status(job_id: str, _: Annotated[HTTPBasicCredentials, Depends(ver
 
     return APIResponse(
         success=True,
-        data=JobStatusResponse(
-            id=job_id,
-            status=job.status,
-            trials=trials,
-            error=job.error,
-        ).to_dict(),
+        data=asdict(
+            JobStatusResponse(
+                id=job_id,
+                status=job.status,
+                trials=trials,
+                error=job.error,
+            )
+        ),
         message="Status retrieved",
     )
 
@@ -169,7 +172,7 @@ async def get_cluster_resources_endpoint(
         )
     return APIResponse(
         success=True,
-        data=resources.to_dict(),
+        data={**asdict(resources), "used_cpus": resources.used_cpus, "used_gpus": resources.used_gpus},
         message="Cluster resources retrieved",
     )
 
