@@ -73,17 +73,11 @@ def get_cluster_status() -> ClusterResources | None:
             if not ray.is_initialized():
                 return None
             total, avail = ray.cluster_resources(), ray.available_resources()
-            total_cpus = int(total.get("CPU", 0))
-            total_gpus = int(total.get("GPU", 0))
-            used_cpus = total_cpus - int(avail.get("CPU", 0))
-            used_gpus = total_gpus - int(avail.get("GPU", 0))
             return ClusterResources(
-                total_cpus=total_cpus,
-                total_gpus=total_gpus,
-                used_cpus=used_cpus,
-                used_gpus=used_gpus,
-                available_cpus=total_cpus - used_cpus,
-                available_gpus=total_gpus - used_gpus,
+                total_cpus=int(total.get("CPU", 0)),
+                total_gpus=int(total.get("GPU", 0)),
+                available_cpus=int(avail.get("CPU", 0)),
+                available_gpus=int(avail.get("GPU", 0)),
             )
         except Exception as e:
             logger.exception("Error fetching cluster status: %s", e)

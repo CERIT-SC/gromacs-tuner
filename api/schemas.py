@@ -45,20 +45,28 @@ class ClusterResources:
 
     total_cpus: int
     total_gpus: int
-    used_cpus: int
-    used_gpus: int
     available_cpus: int
     available_gpus: int
+
+    @property
+    def used_cpus(self) -> int:
+        """Calculate used CPUs."""
+        return self.total_cpus - self.available_cpus
+
+    @property
+    def used_gpus(self) -> int:
+        """Calculate used GPUs."""
+        return self.total_gpus - self.available_gpus
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for API response."""
         return {
             "total_cpus": self.total_cpus,
             "total_gpus": self.total_gpus,
-            "used_cpus": self.used_cpus,
-            "used_gpus": self.used_gpus,
             "available_cpus": self.available_cpus,
             "available_gpus": self.available_gpus,
+            "used_cpus": self.used_cpus,
+            "used_gpus": self.used_gpus,
         }
 
 
