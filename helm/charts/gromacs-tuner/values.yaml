@@ -24,8 +24,8 @@ storage:
 
 # Ray cluster configuration
 ray:
-  version: "2.53.0"
-  image: "cerit.io/xkrasa/gromacs-tuner-worker"
+  version: "2.54.0"
+  image: "cerit.io/xkrasa/gromacs-tuner-worker:gmx2026.1-ray2.54.0-py3.13"
   autoscaler:
     idleTimeoutSeconds: 300
 
