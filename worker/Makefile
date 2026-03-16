@@ -3,7 +3,7 @@ SHELL := /bin/bash
 
 IMAGE_NAME ?= gromacs-tuner-worker
 REGISTRY ?= cerit.io/xkrasa
-TAG ?= latest
+TAG ?= gmx-2026.1_ray-2.54.0_py-3.13
 IMAGE := $(REGISTRY)/$(IMAGE_NAME):$(TAG)
 DOCKERFILE ?= Dockerfile
 CONTEXT ?= .
