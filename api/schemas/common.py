@@ -32,8 +32,10 @@ class ClusterResources:
 
     @property
     def used_cpus(self) -> int:
+        """Number of CPUs currently allocated by running tasks."""
         return self.total_cpus - self.available_cpus
 
     @property
     def used_gpus(self) -> int:
+        """Number of GPUs currently allocated by running tasks."""
         return self.total_gpus - self.available_gpus

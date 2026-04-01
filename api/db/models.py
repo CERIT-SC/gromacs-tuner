@@ -11,10 +11,12 @@ from api.schemas.common import JobStatus, MDEngine
 
 
 class Base(DeclarativeBase):
-    pass
+    """SQLAlchemy declarative base for all ORM models."""
 
 
 class Job(Base):
+    """Tuning job record tracking engine, status, and associated trials."""
+
     __tablename__ = "jobs"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, nullable=False)
@@ -33,6 +35,8 @@ class Job(Base):
 
 
 class Trial(Base):
+    """Individual trial result within a tuning job."""
+
     __tablename__ = "trials"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -64,9 +68,11 @@ SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False)
 
 
 def get_session() -> Session:
+    """Return a new database session."""
     return SessionLocal()
 
 
 def init_db() -> None:
+    """Create database tables and parent directories if they do not exist."""
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     Base.metadata.create_all(_engine)

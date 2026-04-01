@@ -19,6 +19,7 @@ def create_job(id: str, engine: MDEngine) -> None:
 
 
 def update_job_status(id: str, status: JobStatus, error: str | None = None) -> bool:
+    """Update a job's status and optional error message."""
     with get_session() as session:
         if job := session.execute(select(Job).where(Job.id == id)).scalar_one_or_none():
             job.status, job.error, job.updated_at = status, error, datetime.now(timezone.utc)
@@ -28,11 +29,13 @@ def update_job_status(id: str, status: JobStatus, error: str | None = None) -> b
 
 
 def get_job(id: str) -> Job | None:
+    """Fetch a job by ID, or None if not found."""
     with get_session() as session:
         return session.execute(select(Job).where(Job.id == id)).scalar_one_or_none()
 
 
 def delete_job(id: str) -> bool:
+    """Delete a job and its cascaded trials; returns True if found and deleted."""
     with get_session() as session:
         if job := session.execute(select(Job).where(Job.id == id)).scalar_one_or_none():
             session.delete(job)
@@ -57,6 +60,7 @@ def create_trial_result(
 
 
 def update_trial_result(trial_id: int, status: JobStatus, performance: float | None) -> bool:
+    """Update a trial's status and performance; returns True if found and updated."""
     with get_session() as session:
         if trial := session.execute(select(Trial).where(Trial.id == trial_id)).scalar_one_or_none():
             trial.status, trial.performance = status, performance

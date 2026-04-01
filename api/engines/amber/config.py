@@ -31,10 +31,12 @@ class AmberTrialConfig:
 
     @property
     def num_cpus(self) -> int:
+        """Number of CPU slots required (1 for CUDA, np for MPI)."""
         return 1 if self.binary == AmberBinary.PMEMD_CUDA else self.np
 
     @property
     def num_gpus(self) -> int:
+        """Number of GPU slots required (1 for CUDA, 0 for MPI)."""
         return 1 if self.binary == AmberBinary.PMEMD_CUDA else 0
 
     @classmethod
@@ -57,6 +59,7 @@ class AmberTrialConfig:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "AmberTrialConfig":
+        """Reconstruct an AmberTrialConfig from a plain dict (inverse of to_dict)."""
         return cls(
             binary=AmberBinary(data["binary"]),
             np=data["np"],
@@ -64,4 +67,5 @@ class AmberTrialConfig:
         )
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize to a plain dict suitable for JSON storage."""
         return {"binary": self.binary.value, "np": self.np, "ewald": self.ewald.value}

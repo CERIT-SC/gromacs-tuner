@@ -1,7 +1,6 @@
 from io import BytesIO
 from unittest.mock import MagicMock, patch
 
-import pytest
 from fastapi.testclient import TestClient
 
 from api.main import app
@@ -22,7 +21,7 @@ def _fake_mdin() -> BytesIO:
 
 class TestCreateAmberTuningJob:
     @patch("api.routers.amber.submit_tuning_job")
-    def test_returns_job_id(self, mock_submit):
+    def test_returns_job_id(self, mock_submit) -> None:
         mock_submit.return_value = "test-amber-job"
         response = client.post(
             "/api/amber/tuning-jobs",
@@ -37,7 +36,7 @@ class TestCreateAmberTuningJob:
         assert response.status_code == 200
         assert response.json()["success"] is True
 
-    def test_rejects_wrong_prmtop_extension(self):
+    def test_rejects_wrong_prmtop_extension(self) -> None:
         response = client.post(
             "/api/amber/tuning-jobs",
             auth=AUTH,
@@ -47,9 +46,9 @@ class TestCreateAmberTuningJob:
                 "mdin": ("md.mdin", _fake_mdin(), "text/plain"),
             },
         )
-        assert response.status_code in (400, 401)
+        assert response.status_code in {400, 401}
 
-    def test_requires_auth(self):
+    def test_requires_auth(self) -> None:
         response = client.post(
             "/api/amber/tuning-jobs",
             files={
@@ -65,7 +64,7 @@ class TestGetAmberStatus:
     @patch("api.routers.amber.get_job")
     @patch("api.routers.amber.sync_job_status")
     @patch("api.routers.amber.get_trials_by_job_id")
-    def test_returns_status(self, mock_trials, mock_sync, mock_get_job):
+    def test_returns_status(self, mock_trials, mock_sync, mock_get_job) -> None:
         job = MagicMock()
         job.status = "RUNNING"
         job.engine = "amber"
@@ -77,7 +76,7 @@ class TestGetAmberStatus:
         assert response.status_code == 200
 
     @patch("api.routers.amber.get_job")
-    def test_returns_404_for_wrong_engine(self, mock_get_job):
+    def test_returns_404_for_wrong_engine(self, mock_get_job) -> None:
         job = MagicMock()
         job.engine = "gmx"
         mock_get_job.return_value = job

@@ -32,31 +32,41 @@ logger.info("Tuner module initialized")
 
 
 class JobState:
+    """Per-job state: background thread, cancellation event, and active Ray futures."""
+
     def __init__(self, thread: threading.Thread) -> None:
+        """Store the job thread and initialise cancellation/futures tracking."""
         self.thread = thread
         self.cancelled = threading.Event()
         self.futures: set[ray.ObjectRef] = set()
 
 
 class JobContext:
+    """Thread-safe registry of all in-flight tuning jobs."""
+
     def __init__(self) -> None:
+        """Initialise an empty job registry with a reentrant lock."""
         self._jobs: dict[str, JobState] = {}
         self._lock = threading.Lock()
 
     def add_job(self, job_id: str, thread: threading.Thread) -> None:
+        """Register a new job with its background thread."""
         with self._lock:
             self._jobs[job_id] = JobState(thread)
 
     def remove_job(self, job_id: str) -> None:
+        """Remove a job from the registry (no-op if not present)."""
         with self._lock:
             self._jobs.pop(job_id, None)
 
     def is_cancelled(self, job_id: str) -> bool:
+        """Return True if the job has been marked for cancellation."""
         with self._lock:
             state = self._jobs.get(job_id)
             return state is not None and state.cancelled.is_set()
 
     def mark_cancelled(self, job_id: str) -> threading.Event:
+        """Set the cancellation flag for a job and return its event."""
         with self._lock:
             state = self._jobs.get(job_id)
             if state:
@@ -67,23 +77,27 @@ class JobContext:
             return event
 
     def add_futures(self, job_id: str, futures: set[ray.ObjectRef]) -> None:
+        """Register Ray futures belonging to a job for later cancellation."""
         with self._lock:
             state = self._jobs.get(job_id)
             if state:
                 state.futures.update(futures)
 
     def remove_future(self, job_id: str, future: ray.ObjectRef) -> None:
+        """Remove a completed future from the job's tracking set."""
         with self._lock:
             state = self._jobs.get(job_id)
             if state:
                 state.futures.discard(future)
 
     def get_futures(self, job_id: str) -> set[ray.ObjectRef]:
+        """Return a snapshot of all active futures for a job."""
         with self._lock:
             state = self._jobs.get(job_id)
             return state.futures.copy() if state else set()
 
     def is_thread_alive(self, job_id: str) -> bool:
+        """Return True if the job's background thread is still running."""
         with self._lock:
             state = self._jobs.get(job_id)
             return state is not None and state.thread.is_alive()
@@ -239,6 +253,7 @@ def submit_tuning_job(
 
 
 def cancel_job(job_id: str) -> bool:
+    """Cancel an in-flight job and its active Ray trials; returns False if job not found."""
     if not get_job(job_id):
         logger.warning("Cannot cancel: job %s not found", job_id)
         return False
@@ -257,10 +272,11 @@ def cancel_job(job_id: str) -> bool:
 
 
 def sync_job_status(job_id: str) -> JobStatus | None:
+    """Reconcile DB status with live thread/cancellation state; returns None if job not found."""
     job = get_job(job_id)
     if not job:
         return None
-    if job.status in (JobStatus.TERMINATED, JobStatus.ERROR):
+    if job.status in {JobStatus.TERMINATED, JobStatus.ERROR}:
         return job.status
     if _job_context.is_cancelled(job_id):
         return JobStatus.ERROR

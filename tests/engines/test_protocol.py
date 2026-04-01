@@ -1,20 +1,20 @@
 from api.engines.protocol import Engine, TrialConfig, TrialResult
 
 
-def test_trial_config_stores_params():
+def test_trial_config_stores_params() -> None:
     cfg = TrialConfig(num_cpus=4, num_gpus=1, params={"binary": "pmemd.cuda", "np": 1})
     assert cfg.num_cpus == 4
     assert cfg.num_gpus == 1
     assert cfg.params["binary"] == "pmemd.cuda"
 
 
-def test_trial_result_fields():
+def test_trial_result_fields() -> None:
     r = TrialResult(performance=12.5, steps_per_sec=1500.0, early_stopped=False)
     assert r.performance == 12.5
     assert not r.early_stopped
 
 
-def test_engine_protocol_is_structural():
+def test_engine_protocol_is_structural() -> None:
     """Any class with generate_configs + run_trial satisfies Engine without inheriting."""
 
     class FakeEngine:

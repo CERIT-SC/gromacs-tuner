@@ -44,10 +44,12 @@ class GmxTrialConfig:
 
     @property
     def num_cpus(self) -> int:
+        """Total CPU slots required (np * ntomp, treating ntomp=0 as 1)."""
         return self.np * (self.ntomp if self.ntomp > 0 else 1)
 
     @property
     def num_gpus(self) -> int:
+        """Number of GPU slots required (1 if nb or pme uses GPU, else 0)."""
         return int(self.nb == NBMode.GPU or self.pme == PMEMode.GPU)
 
     @classmethod
@@ -62,6 +64,7 @@ class GmxTrialConfig:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "GmxTrialConfig":
+        """Reconstruct a GmxTrialConfig from a plain dict (inverse of to_dict)."""
         return cls(
             ntomp=data["ntomp"],
             np=data["np"],
@@ -70,4 +73,5 @@ class GmxTrialConfig:
         )
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize to a plain dict suitable for JSON storage."""
         return {"ntomp": self.ntomp, "np": self.np, "nb": self.nb.value, "pme": self.pme.value}

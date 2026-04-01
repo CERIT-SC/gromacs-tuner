@@ -18,28 +18,28 @@ SAMPLE_MDINFO = """\
 """
 
 
-def test_parse_performance_returns_last_match():
+def test_parse_performance_returns_last_match() -> None:
     # Last ns/day in mdout is the "all steps" summary — should be 13.5
     result = _parse_amber_performance(SAMPLE_MDOUT)
     assert result == 13.5
 
 
-def test_parse_performance_returns_zero_on_empty():
+def test_parse_performance_returns_zero_on_empty() -> None:
     assert _parse_amber_performance("") == 0.0
 
 
-def test_parse_performance_returns_zero_on_no_match():
+def test_parse_performance_returns_zero_on_no_match() -> None:
     assert _parse_amber_performance("no performance data here") == 0.0
 
 
-def test_parse_progress_returns_step():
+def test_parse_progress_returns_step() -> None:
     result = _parse_amber_progress(SAMPLE_MDINFO)
     assert result == 5000
 
 
-def test_parse_progress_returns_none_on_empty():
+def test_parse_progress_returns_none_on_empty() -> None:
     assert _parse_amber_progress("") is None
 
 
-def test_parse_progress_returns_none_on_no_match():
+def test_parse_progress_returns_none_on_no_match() -> None:
     assert _parse_amber_progress("no steps here") is None

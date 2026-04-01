@@ -53,7 +53,12 @@ async def create_amber_tuning_job(
     nsteps: Annotated[int, Form(ge=1)] = 10_000,
     extra_args: Annotated[str, Form()] = "",
 ) -> APIResponse:
-    """Start a new AMBER hyperparameter tuning run with prmtop + inpcrd + mdin."""
+    """
+    Start a new AMBER hyperparameter tuning run with prmtop + inpcrd + mdin.
+
+    Raises:
+        HTTPException: 400/413 on invalid input, 500 on submission failure.
+    """
     try:
         sanitized_args = sanitize_amber_extra_args(extra_args)
     except (ValidationError, ValueError) as e:
@@ -82,7 +87,12 @@ async def create_amber_tuning_job(
 async def get_amber_status(
     job_id: str, _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)]
 ) -> APIResponse:
-    """Get status of an AMBER tuning job."""
+    """
+    Get status of an AMBER tuning job.
+
+    Raises:
+        HTTPException: 404 if job not found or belongs to a different engine, 503 on DB timeout.
+    """
     try:
         job = await run_in_threadpool(get_job, job_id)
         if not job or job.engine != MDEngine.AMBER:
@@ -119,7 +129,12 @@ async def get_amber_status(
 async def delete_amber_tuning_job(
     job_id: str, _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)]
 ) -> APIResponse:
-    """Delete an AMBER tuning job."""
+    """
+    Delete an AMBER tuning job.
+
+    Raises:
+        HTTPException: 404 if job not found or belongs to a different engine.
+    """
     job = await run_in_threadpool(get_job, job_id)
     if not job or job.engine != MDEngine.AMBER:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")

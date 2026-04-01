@@ -12,6 +12,7 @@ class GmxEngine:
     """Engine implementation for GROMACS mdrun."""
 
     def generate_configs(self) -> list[TrialConfig]:
+        """Return all GMX trial configs wrapped in the engine-agnostic TrialConfig type."""
         return [
             TrialConfig(num_cpus=c.num_cpus, num_gpus=c.num_gpus, params=c.to_dict())
             for c in GmxTrialConfig.generate_all_configs()
@@ -26,6 +27,7 @@ class GmxEngine:
         extra_args: str,
         best_steps_per_sec: float,
     ) -> TrialResult:
+        """Execute one mdrun trial and return the result."""
         perf, sps, early = run_mdrun(
             GmxTrialConfig.from_dict(config.params),
             trial_id,
