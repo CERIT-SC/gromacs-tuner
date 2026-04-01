@@ -64,14 +64,13 @@ async def create_amber_tuning_job(
     _validate_amber_file(mdin, {".mdin"})
 
     job_id = str(uuid.uuid4())
-    await run_in_threadpool(_save_upload, prmtop, TPR_DIR / f"{job_id}_md.prmtop")
-    await run_in_threadpool(_save_upload, inpcrd, TPR_DIR / f"{job_id}_md.inpcrd")
-    await run_in_threadpool(_save_upload, mdin, TPR_DIR / f"{job_id}_md.mdin")
-
     try:
+        await run_in_threadpool(_save_upload, prmtop, TPR_DIR / f"{job_id}_md.prmtop")
+        await run_in_threadpool(_save_upload, inpcrd, TPR_DIR / f"{job_id}_md.inpcrd")
+        await run_in_threadpool(_save_upload, mdin, TPR_DIR / f"{job_id}_md.mdin")
         submit_tuning_job(job_id, AmberEngine(), MDEngine.AMBER, extra_args=sanitized_args, nsteps=nsteps)
     except Exception as e:
-        logger.exception("Failed to submit AMBER tuning job %s", job_id)
+        logger.exception("Failed to create AMBER tuning job %s", job_id)
         await run_in_threadpool(cleanup_job_files, job_id)
         raise HTTPException(status_code=500, detail=f"Failed to submit job: {e}") from e
 

@@ -1,13 +1,12 @@
 """Database connection and ORM models."""
 
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from sqlalchemy import JSON, Enum, ForeignKey, String, create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
-from api.config import DB_PATH, TPR_DIR
+from api.config import DB_PATH
 from api.schemas.common import JobStatus, MDEngine
 
 
@@ -31,10 +30,6 @@ class Job(Base):
     trials: Mapped[list["Trial"]] = relationship(
         "Trial", back_populates="job", cascade="all, delete-orphan", passive_deletes=True
     )
-
-    @property
-    def tpr_path(self) -> Path:
-        return TPR_DIR / f"{self.id}_md.tpr"
 
 
 class Trial(Base):
