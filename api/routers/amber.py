@@ -1,0 +1,133 @@
+"""AMBER tuning job endpoints — /api/amber/tuning-jobs."""
+
+import logging
+import shutil
+import uuid
+from dataclasses import asdict
+from pathlib import Path
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.security import HTTPBasicCredentials
+from pydantic import ValidationError
+from sqlalchemy.exc import OperationalError
+from starlette.concurrency import run_in_threadpool
+
+from api.auth import APIResponse, verify_credentials
+from api.config import MAX_UPLOAD_SIZE, TPR_DIR
+from api.db.operations import delete_job, get_job, get_trials_by_job_id
+from api.engines.amber.engine import AmberEngine
+from api.rayworker import cancel_job, submit_tuning_job, sync_job_status
+from api.schemas.amber import AmberTrialResponse
+from api.schemas.common import JobStatus, MDEngine
+from api.utils import cleanup_job_files, sanitize_amber_extra_args
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+_INPCRD_EXTENSIONS = {".inpcrd", ".rst7", ".nc"}
+
+
+def _save_upload(file: UploadFile, dest: Path) -> None:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with dest.open("wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+
+def _validate_amber_file(file: UploadFile, allowed_extensions: set[str]) -> None:
+    if file.size and file.size > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=413, detail=f"File size exceeds limit of {MAX_UPLOAD_SIZE} bytes")
+    if not file.filename or not any(file.filename.endswith(ext) for ext in allowed_extensions):
+        raise HTTPException(
+            status_code=400,
+            detail=f"File '{file.filename}' must have one of these extensions: {', '.join(sorted(allowed_extensions))}",
+        )
+
+
+@router.post("/tuning-jobs")
+async def create_amber_tuning_job(
+    _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)],
+    prmtop: Annotated[UploadFile, File()],
+    inpcrd: Annotated[UploadFile, File()],
+    mdin: Annotated[UploadFile, File()],
+    nsteps: Annotated[int, Form(ge=1)] = 10_000,
+    extra_args: Annotated[str, Form()] = "",
+) -> APIResponse:
+    """Start a new AMBER hyperparameter tuning run with prmtop + inpcrd + mdin."""
+    try:
+        sanitized_args = sanitize_amber_extra_args(extra_args)
+    except (ValidationError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    _validate_amber_file(prmtop, {".prmtop", ".parm7"})
+    _validate_amber_file(inpcrd, _INPCRD_EXTENSIONS)
+    _validate_amber_file(mdin, {".mdin"})
+
+    job_id = str(uuid.uuid4())
+    await run_in_threadpool(_save_upload, prmtop, TPR_DIR / f"{job_id}_md.prmtop")
+    await run_in_threadpool(_save_upload, inpcrd, TPR_DIR / f"{job_id}_md.inpcrd")
+    await run_in_threadpool(_save_upload, mdin, TPR_DIR / f"{job_id}_md.mdin")
+
+    try:
+        submit_tuning_job(job_id, AmberEngine(), MDEngine.AMBER, extra_args=sanitized_args, nsteps=nsteps)
+    except Exception as e:
+        logger.exception("Failed to submit AMBER tuning job %s", job_id)
+        await run_in_threadpool(cleanup_job_files, job_id)
+        raise HTTPException(status_code=500, detail=f"Failed to submit job: {e}") from e
+
+    logger.info("Started AMBER tuning job %s", job_id)
+    return APIResponse(success=True, data={"id": job_id, "status": JobStatus.PENDING}, message="Tuning job started")
+
+
+@router.get("/tuning-jobs/{job_id}/status")
+async def get_amber_status(
+    job_id: str, _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)]
+) -> APIResponse:
+    """Get status of an AMBER tuning job."""
+    try:
+        job = await run_in_threadpool(get_job, job_id)
+        if not job or job.engine != MDEngine.AMBER:
+            raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+        await run_in_threadpool(sync_job_status, job_id)
+        job = await run_in_threadpool(get_job, job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+        raw_trials = await run_in_threadpool(get_trials_by_job_id, job_id)
+    except OperationalError as e:
+        logger.exception("Database timeout for job %s", job_id)
+        raise HTTPException(status_code=503, detail="Database is busy. Please try again later.") from e
+
+    trials = [
+        AmberTrialResponse(
+            id=str(t.id),
+            status=t.status,
+            binary=t.config_json.get("binary", "pmemd.cuda"),
+            np=t.config_json.get("np", 1),
+            ewald=t.config_json.get("ewald", "default"),
+            performance=t.performance,
+        )
+        for t in raw_trials
+    ]
+
+    return APIResponse(
+        success=True,
+        data={"id": job_id, "status": job.status, "error": job.error, "trials": [asdict(t) for t in trials]},
+        message="Status retrieved",
+    )
+
+
+@router.delete("/tuning-jobs/{job_id}")
+async def delete_amber_tuning_job(
+    job_id: str, _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)]
+) -> APIResponse:
+    """Delete an AMBER tuning job."""
+    job = await run_in_threadpool(get_job, job_id)
+    if not job or job.engine != MDEngine.AMBER:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+
+    cancelled = await run_in_threadpool(cancel_job, job_id)
+    await run_in_threadpool(delete_job, job_id)
+    await run_in_threadpool(cleanup_job_files, job_id)
+
+    logger.info("Deleted AMBER job %s: cancelled=%s", job_id, cancelled)
+    return APIResponse(success=True, data={"id": job_id, "cancelled": cancelled}, message="Tuning job deleted")
