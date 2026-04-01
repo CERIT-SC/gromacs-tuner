@@ -1,0 +1,36 @@
+"""Engine protocol and shared trial types."""
+
+from dataclasses import dataclass
+from typing import Any, Protocol
+
+
+@dataclass
+class TrialConfig:
+    """Engine-agnostic trial descriptor passed through the orchestration layer."""
+
+    num_cpus: int
+    num_gpus: int
+    params: dict[str, Any]  # engine-specific; stored as-is in Trial.config_json
+
+
+@dataclass
+class TrialResult:
+    """Result returned by every engine after a trial."""
+
+    performance: float       # ns/day; 0.0 on failure
+    steps_per_sec: float     # used for early stopping comparison
+    early_stopped: bool
+
+
+class Engine(Protocol):
+    def generate_configs(self) -> list[TrialConfig]: ...
+
+    def run_trial(
+        self,
+        config: TrialConfig,
+        trial_id: str,
+        job_id: str,
+        nsteps: int,
+        extra_args: str,
+        best_steps_per_sec: float,
+    ) -> TrialResult: ...
