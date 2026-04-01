@@ -15,7 +15,7 @@ from typing import Any
 import ray
 
 from api.config import JOBS_DIR, TPR_DIR
-from api.schemas import ClusterResources
+from api.schemas.common import ClusterResources
 
 logger = logging.getLogger(__name__)
 
@@ -25,19 +25,26 @@ _EXTRA_ARGS_FORBIDDEN_RE = re.compile(r"[;&|`$()<>]")
 # Forbidden GROMACS flags that should not be overridden
 _EXTRA_ARGS_FORBIDDEN_FLAGS = {"-deffnm", "-s", "-nsteps", "-ntomp", "-np", "-nb", "-pme"}
 
+# Forbidden AMBER flags that should not be overridden
+_AMBER_EXTRA_ARGS_FORBIDDEN_FLAGS = {"-i", "-p", "-c", "-o", "-inf", "-r", "-x", "-O"}
+
 
 def cleanup_job_files(job_id: str) -> None:
-    """Remove temporary files associated with a job ID."""
-    # Remove TPR file
-    tpr_file = TPR_DIR / f"{job_id}_md.tpr"
-    if tpr_file.exists():
-        try:
-            tpr_file.unlink()
-            logger.info("Deleted TPR file: %s", tpr_file)
-        except OSError:
-            logger.exception("Failed to delete %s", tpr_file)
+    """Remove all temporary files associated with a job ID."""
+    files_to_remove = [
+        TPR_DIR / f"{job_id}_md.tpr",
+        TPR_DIR / f"{job_id}_md.prmtop",
+        TPR_DIR / f"{job_id}_md.inpcrd",
+        TPR_DIR / f"{job_id}_md.mdin",
+    ]
+    for f in files_to_remove:
+        if f.exists():
+            try:
+                f.unlink()
+                logger.info("Deleted file: %s", f)
+            except OSError:
+                logger.exception("Failed to delete %s", f)
 
-    # Remove trial directory
     trial_job_dir = JOBS_DIR / job_id
     if trial_job_dir.is_dir():
         try:
@@ -159,5 +166,31 @@ def sanitize_extra_args(extra_args: str) -> str:
             "extra_args must not override critical GROMACS flags: -deffnm, -s, -nsteps, -ntomp, -np, -nb, -pme"
         )
 
-    # Canonicalize spacing/quoting
+    return shlex.join(tokens)
+
+
+def sanitize_amber_extra_args(extra_args: str) -> str:
+    """
+    Validate and normalize extra pmemd arguments.
+
+    Raises:
+        ValueError: If extra_args contains forbidden characters or flags.
+    """
+    extra_args = (extra_args or "").strip()
+    if not extra_args:
+        return ""
+
+    if _EXTRA_ARGS_FORBIDDEN_RE.search(extra_args):
+        raise ValueError("extra_args contains forbidden characters: ; & | ` $ ( ) < >")
+
+    try:
+        tokens = shlex.split(extra_args, posix=True)
+    except ValueError as e:
+        raise ValueError(f"Invalid extra_args: {e}") from e
+
+    if set(tokens) & _AMBER_EXTRA_ARGS_FORBIDDEN_FLAGS:
+        raise ValueError(
+            "extra_args must not override critical AMBER flags: -i, -p, -c, -o, -inf, -r, -x, -O"
+        )
+
     return shlex.join(tokens)
