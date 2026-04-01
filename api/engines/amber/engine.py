@@ -12,6 +12,7 @@ class AmberEngine:
     """Engine implementation for AMBER pmemd."""
 
     def generate_configs(self) -> list[TrialConfig]:
+        """Return all AMBER trial configs wrapped in the engine-agnostic TrialConfig type."""
         return [
             TrialConfig(num_cpus=c.num_cpus, num_gpus=c.num_gpus, params=c.to_dict())
             for c in AmberTrialConfig.generate_all_configs()
@@ -26,6 +27,7 @@ class AmberEngine:
         extra_args: str,
         best_steps_per_sec: float,
     ) -> TrialResult:
+        """Execute one pmemd trial and return the result."""
         perf, sps, early = run_pmemd(
             AmberTrialConfig.from_dict(config.params),
             trial_id,

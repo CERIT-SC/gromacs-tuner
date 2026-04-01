@@ -32,10 +32,7 @@ def patch_mdin_for_benchmark(content: str, nsteps: int, ewald: EwaldPreset) -> s
 
 
 def _patch_namelist(content: str, namelist: str, overrides: dict) -> str:
-    """
-    Remove existing occurrences of override keys inside the namelist block,
-    then inject the new values just before the closing '/'.
-    """
+    """Remove existing override keys inside namelist, then inject new values before closing '/'."""
     lines = content.splitlines()
     result: list[str] = []
     in_block = False

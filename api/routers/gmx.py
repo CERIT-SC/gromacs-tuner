@@ -39,7 +39,12 @@ async def create_gmx_tuning_job(
     nsteps: Annotated[int, Form(ge=1)] = 25_000,
     extra_args: Annotated[str, Form()] = "",
 ) -> APIResponse:
-    """Start a new GMX hyperparameter tuning run with a .tpr file."""
+    """
+    Start a new GMX hyperparameter tuning run with a .tpr file.
+
+    Raises:
+        HTTPException: 400/413 on invalid input, 500 on submission failure.
+    """
     try:
         sanitized_args = sanitize_extra_args(extra_args)
     except (ValidationError, ValueError) as e:
@@ -68,7 +73,12 @@ async def create_gmx_tuning_job(
 async def get_gmx_status(
     job_id: str, _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)]
 ) -> APIResponse:
-    """Get status of a GMX tuning job."""
+    """
+    Get status of a GMX tuning job.
+
+    Raises:
+        HTTPException: 404 if job not found or belongs to a different engine, 503 on DB timeout.
+    """
     try:
         job = await run_in_threadpool(get_job, job_id)
         if not job or job.engine != MDEngine.GMX:
@@ -106,7 +116,12 @@ async def get_gmx_status(
 async def delete_gmx_tuning_job(
     job_id: str, _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)]
 ) -> APIResponse:
-    """Delete a GMX tuning job."""
+    """
+    Delete a GMX tuning job.
+
+    Raises:
+        HTTPException: 404 if job not found or belongs to a different engine.
+    """
     job = await run_in_threadpool(get_job, job_id)
     if not job or job.engine != MDEngine.GMX:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")

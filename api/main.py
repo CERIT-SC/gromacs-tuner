@@ -1,9 +1,9 @@
 import logging
-import yaml
 from dataclasses import asdict
 from pathlib import Path
 from typing import Annotated, Any
 
+import yaml
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasicCredentials
@@ -44,9 +44,11 @@ async def get_cluster_resources_endpoint(
 
 @app.get("/api/health")
 async def health_check() -> APIResponse:
+    """Return a liveness check response."""
     return APIResponse(success=True, data={"status": "ok"}, message="API is healthy")
 
 
 @app.get("/openapi.json", include_in_schema=False)
 def custom_openapi() -> dict[str, Any]:
-    return yaml.safe_load(Path("openapi/gromacs-tuner-openapi.yaml").read_text())
+    """Serve the OpenAPI spec from the YAML file on disk."""
+    return yaml.safe_load(Path("openapi/gromacs-tuner-openapi.yaml").read_text(encoding="utf-8"))

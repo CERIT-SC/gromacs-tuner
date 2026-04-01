@@ -160,7 +160,7 @@ def _run_command_with_monitoring(
         Tuple of (early_stopped, final_steps_per_sec) on success, None on failure.
     """
     try:
-        with stdout_log.open("w") as out, stderr_log.open("w") as err:
+        with stdout_log.open("w", encoding="utf-8") as out, stderr_log.open("w", encoding="utf-8") as err:
             process = subprocess.Popen(
                 cmd,
                 stdout=out,

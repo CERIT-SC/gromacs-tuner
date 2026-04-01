@@ -20,7 +20,7 @@ from api.config import (
     JOBS_DIR,
     TPR_DIR,
 )
-from api.engines.amber.config import AmberBinary, AmberTrialConfig, EwaldPreset
+from api.engines.amber.config import AmberBinary, AmberTrialConfig
 from api.engines.amber.mdin import patch_mdin_for_benchmark
 from api.utils import tail
 
@@ -89,7 +89,7 @@ def _build_command(
         "-x", "/dev/null",
     ]
     if config.binary == AmberBinary.PMEMD_MPI:
-        return ["mpirun", "-np", str(config.np)] + base
+        return ["mpirun", "-np", str(config.np), *base]
     return base
 
 
@@ -109,7 +109,7 @@ def _parse_amber_progress(content: str) -> int | None:
 
 def _run_command_with_monitoring(
     cmd: list[str],
-    mdout: Path,
+    _mdout: Path,
     mdinfo: Path,
     cwd: Path,
     context: str,

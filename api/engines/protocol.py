@@ -23,7 +23,11 @@ class TrialResult:
 
 
 class Engine(Protocol):
-    def generate_configs(self) -> list[TrialConfig]: ...
+    """Structural protocol that every MD engine must satisfy."""
+
+    def generate_configs(self) -> list[TrialConfig]:
+        """Return all trial configurations to benchmark for this engine."""
+        ...
 
     def run_trial(
         self,
@@ -33,4 +37,6 @@ class Engine(Protocol):
         nsteps: int,
         extra_args: str,
         best_steps_per_sec: float,
-    ) -> TrialResult: ...
+    ) -> TrialResult:
+        """Execute a single trial and return its performance result."""
+        ...

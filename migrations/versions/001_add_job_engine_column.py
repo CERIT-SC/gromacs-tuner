@@ -1,4 +1,5 @@
-"""Add engine column to jobs table.
+"""
+Add engine column to jobs table.
 
 Revision ID: 001
 Revises:
