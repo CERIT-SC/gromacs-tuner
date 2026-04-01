@@ -1,8 +1,8 @@
 openapi: 3.0.0
 info:
-  title: "GROMACS Tuner API"
-  version: "1.2"
-  description: "API for submitting and monitoring GROMACS tuning runs."
+  title: "MD Tuner API"
+  version: "2.0"
+  description: "API for submitting and monitoring GROMACS and AMBER hyperparameter tuning runs."
 
 servers:
   - url: https://gromacs-tuner.dyn.cloud.e-infra.cz/api
@@ -11,10 +11,10 @@ security:
   - basicAuth: []
 
 paths:
-  /tuner_runs:
+  /gmx/tuning-jobs:
     post:
-      summary: Submit a `.tpr` file for tuning.
-      description: Uploads a `.tpr` file and starts a tuning process.
+      summary: Submit a GROMACS tuning job.
+      description: Uploads a `.tpr` file and starts a GMX mdrun parameter search.
       security:
         - basicAuth: []
       requestBody:
@@ -29,66 +29,184 @@ paths:
                 file:
                   type: string
                   format: binary
-                  description: The `.tpr` file to be tuned.
+                  description: The `.tpr` topology/run file.
                 nsteps:
                   type: integer
                   default: 25000
                   minimum: 1
-                  description: Number of steps to run in GROMACS mdrun (must be at least 1).
+                  description: Number of mdrun steps per trial.
                 extra_args:
                   type: string
                   default: ""
                   example: "-plumed plumed.dat"
                   description: |
-                    Additional GROMACS mdrun arguments.
+                    Additional gmx mdrun arguments.
                     Shell metacharacters (; & | ` $ ( ) < >) are forbidden.
                     Critical flags (-deffnm, -s, -nsteps, -ntomp, -np, -nb, -pme) cannot be overridden.
       responses:
         "200":
-          description: Tuning run successfully started.
+          description: Tuning job started.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SuccessResponseWithRunID"
+                $ref: "#/components/schemas/JobCreatedResponse"
+        "400":
+          description: Invalid file or arguments.
+        "401":
+          description: Unauthorized.
+        "413":
+          description: File too large.
 
-  /tuner_runs/{job_id}:
-    delete:
-      summary: Delete a tuning run.
-      security:
-        - basicAuth: []
-      parameters:
-        - name: job_id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Tuning run successfully deleted.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SuccessResponseWithDeleteInfo"
-
-  /tuner_runs/{job_id}/status:
+  /gmx/tuning-jobs/{job_id}/status:
     get:
-      summary: Retrieve the status of a tuning run.
+      summary: Get GMX tuning job status.
       security:
         - basicAuth: []
       parameters:
-        - name: job_id
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Unique identifier of the tuning run.
+        - $ref: "#/components/parameters/JobId"
       responses:
         "200":
-          description: Current status of the tuning run.
+          description: Current job status and trial results.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SuccessResponseWithStatus"
+                $ref: "#/components/schemas/GmxStatusResponse"
+        "401":
+          description: Unauthorized.
+        "404":
+          description: Job not found.
+        "503":
+          description: Database busy.
+
+  /gmx/tuning-jobs/{job_id}:
+    delete:
+      summary: Delete a GMX tuning job.
+      security:
+        - basicAuth: []
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200":
+          description: Job deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobDeletedResponse"
+        "401":
+          description: Unauthorized.
+        "404":
+          description: Job not found.
+
+  /amber/tuning-jobs:
+    post:
+      summary: Submit an AMBER tuning job.
+      description: Uploads prmtop + inpcrd + mdin files and starts a pmemd parameter search.
+      security:
+        - basicAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - prmtop
+                - inpcrd
+                - mdin
+              properties:
+                prmtop:
+                  type: string
+                  format: binary
+                  description: AMBER parameter/topology file (`.prmtop` or `.parm7`).
+                inpcrd:
+                  type: string
+                  format: binary
+                  description: AMBER coordinate/restart file (`.inpcrd`, `.rst7`, or `.nc`).
+                mdin:
+                  type: string
+                  format: binary
+                  description: AMBER input file (`.mdin`). Physics parameters are preserved; benchmark-only params are patched.
+                nsteps:
+                  type: integer
+                  default: 10000
+                  minimum: 1
+                  description: Number of pmemd steps per trial.
+                extra_args:
+                  type: string
+                  default: ""
+                  example: "-AllowSmallBox"
+                  description: |
+                    Additional pmemd arguments.
+                    Shell metacharacters (; & | ` $ ( ) < >) are forbidden.
+                    Critical flags (-i, -p, -c, -o, -inf, -r, -x, -O) cannot be overridden.
+      responses:
+        "200":
+          description: Tuning job started.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobCreatedResponse"
+        "400":
+          description: Invalid files or arguments.
+        "401":
+          description: Unauthorized.
+        "413":
+          description: File too large.
+
+  /amber/tuning-jobs/{job_id}/status:
+    get:
+      summary: Get AMBER tuning job status.
+      security:
+        - basicAuth: []
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200":
+          description: Current job status and trial results.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AmberStatusResponse"
+        "401":
+          description: Unauthorized.
+        "404":
+          description: Job not found.
+        "503":
+          description: Database busy.
+
+  /amber/tuning-jobs/{job_id}:
+    delete:
+      summary: Delete an AMBER tuning job.
+      security:
+        - basicAuth: []
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200":
+          description: Job deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobDeletedResponse"
+        "401":
+          description: Unauthorized.
+        "404":
+          description: Job not found.
+
+  /resources:
+    get:
+      summary: Get Ray cluster resource utilization.
+      security:
+        - basicAuth: []
+      responses:
+        "200":
+          description: Cluster resources retrieved (or empty data if Ray is unavailable).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourcesResponse"
+        "401":
+          description: Unauthorized.
 
   /health:
     get:
@@ -99,21 +217,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SuccessResponseWithHealth"
-
-  /resources:
-    get:
-      summary: Get cluster resources.
-      description: Get current Ray cluster resource utilization.
-      security:
-        - basicAuth: []
-      responses:
-        "200":
-          description: Cluster resources retrieved successfully.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SuccessResponseWithResources"
+                $ref: "#/components/schemas/HealthResponse"
 
 components:
   securitySchemes:
@@ -121,129 +225,180 @@ components:
       type: http
       scheme: basic
 
+  parameters:
+    JobId:
+      name: job_id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Unique job identifier (UUID).
+
   schemas:
-    SuccessResponseWithRunID:
+    APIResponse:
       type: object
       properties:
         success:
           type: boolean
         data:
           type: object
-          properties:
-            id:
-              type: string
-            status:
-              type: string
         message:
           type: string
         error:
           type: object
           nullable: true
 
-    SuccessResponseWithStatus:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          type: object
+    JobCreatedResponse:
+      allOf:
+        - $ref: "#/components/schemas/APIResponse"
+        - type: object
           properties:
-            id:
-              type: string
-            status:
-              type: string
-            trials:
-              type: array
-              items:
-                type: object
-                properties:
-                  id:
-                    type: string
-                  status:
-                    type: string
-                  np:
-                    type: integer
-                  ntomp:
-                    type: integer
-                  nb:
-                    type: string
-                  pme:
-                    type: string
-                  performance:
-                    type: number
-                    nullable: true
-            error:
-              type: string
-              nullable: true
-        message:
-          type: string
-        error:
-          type: object
-          nullable: true
+            data:
+              type: object
+              properties:
+                id:
+                  type: string
+                  description: UUID of the created job.
+                status:
+                  type: string
+                  example: PENDING
 
-    SuccessResponseWithHealth:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          type: object
+    JobDeletedResponse:
+      allOf:
+        - $ref: "#/components/schemas/APIResponse"
+        - type: object
           properties:
-            status:
-              type: string
-        message:
-          type: string
-        error:
-          type: object
-          nullable: true
+            data:
+              type: object
+              properties:
+                id:
+                  type: string
+                cancelled:
+                  type: boolean
+                  description: Whether the job was actively cancelled (vs already finished).
 
-    SuccessResponseWithDeleteInfo:
+    GmxTrial:
       type: object
       properties:
-        success:
-          type: boolean
-        data:
-          type: object
-          properties:
-            id:
-              type: string
-            cancelled:
-              type: boolean
-        message:
+        id:
           type: string
-        error:
-          type: object
+        status:
+          type: string
+          enum: [UNKNOWN, PENDING, RUNNING, TERMINATED, ERROR]
+        np:
+          type: integer
+          description: Number of MPI ranks.
+        ntomp:
+          type: integer
+          description: OpenMP threads per rank (0 = auto).
+        nb:
+          type: string
+          enum: [auto, cpu, gpu]
+          description: Non-bonded calculation target.
+        pme:
+          type: string
+          enum: [auto, cpu, gpu]
+          description: PME calculation target.
+        performance:
+          type: number
           nullable: true
+          description: Performance in ns/day; null if trial is pending/running/early-stopped.
 
-    SuccessResponseWithResources:
+    AmberTrial:
       type: object
       properties:
-        success:
-          type: boolean
-        data:
-          type: object
-          description: Cluster resources information. Returns empty object when unavailable.
-          properties:
-            total_cpus:
-              type: integer
-              description: Total CPU cores available in the Ray cluster.
-            total_gpus:
-              type: integer
-              description: Total GPUs available in the Ray cluster.
-            used_cpus:
-              type: integer
-              description: CPU cores currently in use across the cluster.
-            used_gpus:
-              type: integer
-              description: GPUs currently in use across the cluster.
-            available_cpus:
-              type: integer
-              description: CPU cores available for new tasks.
-            available_gpus:
-              type: integer
-              description: GPUs available for new tasks.
-        message:
+        id:
           type: string
-        error:
-          type: object
+        status:
+          type: string
+          enum: [UNKNOWN, PENDING, RUNNING, TERMINATED, ERROR]
+        binary:
+          type: string
+          enum: [pmemd.cuda, pmemd.MPI]
+          description: pmemd binary used for this trial.
+        np:
+          type: integer
+          description: Number of MPI ranks (only relevant for pmemd.MPI).
+        ewald:
+          type: string
+          enum: [default, optimized]
+          description: Ewald summation preset (optimized applies netfrc=0, skin_permit=0.75).
+        performance:
+          type: number
           nullable: true
+          description: Performance in ns/day; null if trial is pending/running/early-stopped.
+
+    GmxStatusResponse:
+      allOf:
+        - $ref: "#/components/schemas/APIResponse"
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                id:
+                  type: string
+                status:
+                  type: string
+                  enum: [UNKNOWN, PENDING, RUNNING, TERMINATED, ERROR]
+                error:
+                  type: string
+                  nullable: true
+                trials:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/GmxTrial"
+
+    AmberStatusResponse:
+      allOf:
+        - $ref: "#/components/schemas/APIResponse"
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                id:
+                  type: string
+                status:
+                  type: string
+                  enum: [UNKNOWN, PENDING, RUNNING, TERMINATED, ERROR]
+                error:
+                  type: string
+                  nullable: true
+                trials:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/AmberTrial"
+
+    ResourcesResponse:
+      allOf:
+        - $ref: "#/components/schemas/APIResponse"
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                total_cpus:
+                  type: integer
+                total_gpus:
+                  type: integer
+                available_cpus:
+                  type: integer
+                available_gpus:
+                  type: integer
+                used_cpus:
+                  type: integer
+                used_gpus:
+                  type: integer
+
+    HealthResponse:
+      allOf:
+        - $ref: "#/components/schemas/APIResponse"
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                status:
+                  type: string
+                  example: ok
