@@ -5,10 +5,12 @@ RUN groupadd -g 1000 appuser && \
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY api/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt && rm requirements.txt
 
-COPY . api/
+COPY api/ api/
+COPY migrations/ migrations/
+COPY alembic.ini .
 
 ENV PYTHONPATH=/app \
     PYTHONUNBUFFERED=1

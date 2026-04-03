@@ -13,7 +13,6 @@ from api.config import (
     RAY_ADDRESS,
     RUNTIME_WORKDIR,
 )
-from api.db import init_db
 from api.db.operations import (
     create_job,
     create_trial_result,
@@ -27,7 +26,6 @@ from api.schemas.common import JobStatus, MDEngine
 RAY_RUNTIME_ENV = {"working_dir": RUNTIME_WORKDIR}
 logger = logging.getLogger(__name__)
 
-init_db()
 logger.info("Tuner module initialized")
 
 
