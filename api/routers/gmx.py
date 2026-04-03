@@ -1,10 +1,8 @@
 """GMX tuning job endpoints — /api/gmx/tuning-jobs."""
 
 import logging
-import shutil
 import uuid
 from dataclasses import asdict
-from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -20,16 +18,10 @@ from api.engines.gmx.engine import GmxEngine
 from api.rayworker import cancel_job, submit_tuning_job, sync_job_status
 from api.schemas.common import JobStatus, MDEngine
 from api.schemas.gmx import GmxTrialResponse
-from api.utils import cleanup_job_files, sanitize_extra_args
+from api.utils import cleanup_job_files, sanitize_extra_args, save_upload
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-
-def _save_upload(file: UploadFile, dest: Path) -> None:
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    with dest.open("wb") as f:
-        shutil.copyfileobj(file.file, f)
 
 
 @router.post("/tuning-jobs")
@@ -56,7 +48,7 @@ async def create_gmx_tuning_job(
         raise HTTPException(status_code=400, detail="Only .tpr files are allowed")
 
     job_id = str(uuid.uuid4())
-    await run_in_threadpool(_save_upload, file, TPR_DIR / f"{job_id}_md.tpr")
+    await run_in_threadpool(save_upload, file, TPR_DIR / f"{job_id}_md.tpr")
 
     try:
         submit_tuning_job(job_id, GmxEngine(), MDEngine.GMX, extra_args=sanitized_args, nsteps=nsteps)

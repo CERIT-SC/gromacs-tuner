@@ -1,6 +1,7 @@
 """AMBER mdin file patcher for benchmark runs."""
 
 import re
+from typing import Any
 
 from api.engines.amber.config import EwaldPreset
 
@@ -31,7 +32,7 @@ def patch_mdin_for_benchmark(content: str, nsteps: int, ewald: EwaldPreset) -> s
     return content
 
 
-def _patch_namelist(content: str, namelist: str, overrides: dict) -> str:
+def _patch_namelist(content: str, namelist: str, overrides: dict[str, Any]) -> str:
     """Remove existing override keys inside namelist, then inject new values before closing '/'."""
     lines = content.splitlines()
     result: list[str] = []
@@ -61,7 +62,7 @@ def _patch_namelist(content: str, namelist: str, overrides: dict) -> str:
     return "\n".join(result)
 
 
-def _append_namelist(content: str, namelist: str, params: dict) -> str:
+def _append_namelist(content: str, namelist: str, params: dict[str, Any]) -> str:
     """Append a new namelist block at the end of the mdin content."""
     lines = [f" {namelist}"]
     for key, value in params.items():
