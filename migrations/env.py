@@ -15,7 +15,7 @@ from api.db.models import Base
 
 alembic_cfg = context.config
 if alembic_cfg.config_file_name is not None:
-    fileConfig(alembic_cfg.config_file_name)
+    fileConfig(alembic_cfg.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 
