@@ -3,3 +3,4 @@ __pycache__/
 .vscode/
 .venv/
 .python-version
+pmemd24*.tar.bz2
