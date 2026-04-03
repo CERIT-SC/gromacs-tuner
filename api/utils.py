@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import ray
+from fastapi import UploadFile
 
 from api.config import JOBS_DIR, TPR_DIR
 from api.schemas.common import ClusterResources
@@ -27,6 +28,13 @@ _EXTRA_ARGS_FORBIDDEN_FLAGS = {"-deffnm", "-s", "-nsteps", "-ntomp", "-np", "-nb
 
 # Forbidden AMBER flags that should not be overridden
 _AMBER_EXTRA_ARGS_FORBIDDEN_FLAGS = {"-i", "-p", "-c", "-o", "-inf", "-r", "-x", "-O"}
+
+
+def save_upload(file: UploadFile, dest: Path) -> None:
+    """Write an uploaded file to dest, creating parent directories as needed."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with dest.open("wb") as f:
+        shutil.copyfileobj(file.file, f)
 
 
 def cleanup_job_files(job_id: str) -> None:

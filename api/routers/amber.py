@@ -1,10 +1,8 @@
 """AMBER tuning job endpoints — /api/amber/tuning-jobs."""
 
 import logging
-import shutil
 import uuid
 from dataclasses import asdict
-from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -20,18 +18,12 @@ from api.engines.amber.engine import AmberEngine
 from api.rayworker import cancel_job, submit_tuning_job, sync_job_status
 from api.schemas.amber import AmberTrialResponse
 from api.schemas.common import JobStatus, MDEngine
-from api.utils import cleanup_job_files, sanitize_amber_extra_args
+from api.utils import cleanup_job_files, sanitize_amber_extra_args, save_upload
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _INPCRD_EXTENSIONS = {".inpcrd", ".rst7", ".nc"}
-
-
-def _save_upload(file: UploadFile, dest: Path) -> None:
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    with dest.open("wb") as f:
-        shutil.copyfileobj(file.file, f)
 
 
 def _validate_amber_file(file: UploadFile, allowed_extensions: set[str]) -> None:
@@ -70,9 +62,9 @@ async def create_amber_tuning_job(
 
     job_id = str(uuid.uuid4())
     try:
-        await run_in_threadpool(_save_upload, prmtop, TPR_DIR / f"{job_id}_md.prmtop")
-        await run_in_threadpool(_save_upload, inpcrd, TPR_DIR / f"{job_id}_md.inpcrd")
-        await run_in_threadpool(_save_upload, mdin, TPR_DIR / f"{job_id}_md.mdin")
+        await run_in_threadpool(save_upload, prmtop, TPR_DIR / f"{job_id}_md.prmtop")
+        await run_in_threadpool(save_upload, inpcrd, TPR_DIR / f"{job_id}_md.inpcrd")
+        await run_in_threadpool(save_upload, mdin, TPR_DIR / f"{job_id}_md.mdin")
         submit_tuning_job(job_id, AmberEngine(), MDEngine.AMBER, extra_args=sanitized_args, nsteps=nsteps)
     except Exception as e:
         logger.exception("Failed to create AMBER tuning job %s", job_id)
