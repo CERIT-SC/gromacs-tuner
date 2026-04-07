@@ -48,12 +48,11 @@ async def create_gmx_tuning_job(
         raise HTTPException(status_code=400, detail="Only .tpr files are allowed")
 
     job_id = str(uuid.uuid4())
-    await run_in_threadpool(save_upload, file, TPR_DIR / f"{job_id}_md.tpr")
-
     try:
+        await run_in_threadpool(save_upload, file, TPR_DIR / f"{job_id}_md.tpr")
         submit_tuning_job(job_id, GmxEngine(), MDEngine.GMX, extra_args=sanitized_args, nsteps=nsteps)
     except Exception as e:
-        logger.exception("Failed to submit GMX tuning job %s", job_id)
+        logger.exception("Failed to create GMX tuning job %s", job_id)
         await run_in_threadpool(cleanup_job_files, job_id)
         raise HTTPException(status_code=500, detail=f"Failed to submit job: {e}") from e
 
