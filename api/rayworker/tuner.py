@@ -140,7 +140,7 @@ def _run_single_trial(
 
 
 def _order_trial_configs(trial_configs: list[TrialConfigEntry]) -> list[TrialConfigEntry]:
-    return sorted(trial_configs, key=lambda item: (-item[1].num_gpus, -item[1].num_cpus))
+    return sorted(trial_configs, key=lambda item: (-item[1].priority, -item[1].num_gpus, -item[1].num_cpus))
 
 
 def _submit_trials(
@@ -154,7 +154,7 @@ def _submit_trials(
     future_to_trial: dict[ray.ObjectRef, int] = {}
     for trial_id, cfg in trials:
         future = _run_single_trial.options(num_cpus=cfg.num_cpus, num_gpus=cfg.num_gpus).remote(
-            job_id, str(trial_id), cfg, engine, extra_args, nsteps, best_steps_per_sec,
+            job_id, str(trial_id), cfg, engine, extra_args, nsteps, best_steps_per_sec,  # type: ignore[misc]
         )
         future_to_trial[future] = trial_id
         update_trial_result(trial_id, JobStatus.RUNNING, None)
@@ -197,15 +197,17 @@ def _process_trial_results(
 
 def _run_tuning_async(job_id: str, engine: Engine, extra_args: str = "", nsteps: int = 25_000) -> None:
     try:
-        _ensure_ray_initialized()
+        # Create trial records before connecting to Ray so GET returns them immediately.
         all_configs = engine.generate_configs()
-        update_job_status(job_id, JobStatus.RUNNING)
-
         trial_configs = [
             (create_trial_result(job_id, cfg.params, JobStatus.PENDING, None), cfg)
             for cfg in all_configs
         ]
         trial_configs = _order_trial_configs(trial_configs)
+
+        _ensure_ray_initialized()
+        update_job_status(job_id, JobStatus.RUNNING)
+
         best_steps_per_sec = 0.0
 
         baseline_count = min(EARLY_STOP_BASELINE_TRIALS, len(trial_configs))
