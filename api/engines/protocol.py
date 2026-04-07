@@ -11,6 +11,7 @@ class TrialConfig:
     num_cpus: int
     num_gpus: int
     params: dict[str, Any]  # engine-specific; stored as-is in Trial.config_json
+    priority: int = 0  # higher = run sooner; engines use this to prefer better configs
 
 
 @dataclass

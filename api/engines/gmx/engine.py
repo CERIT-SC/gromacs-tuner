@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from api.engines.gmx.config import GmxTrialConfig
+from api.engines.gmx.config import GmxTrialConfig, NBMode, PMEMode
 from api.engines.gmx.runner import run_mdrun
 from api.engines.protocol import TrialConfig, TrialResult
 
@@ -14,7 +14,12 @@ class GmxEngine:
     def generate_configs(self) -> list[TrialConfig]:
         """Return all GMX trial configs wrapped in the engine-agnostic TrialConfig type."""
         return [
-            TrialConfig(num_cpus=c.num_cpus, num_gpus=c.num_gpus, params=c.to_dict())
+            TrialConfig(
+                num_cpus=c.num_cpus,
+                num_gpus=c.num_gpus,
+                params=c.to_dict(),
+                priority=int(c.nb == NBMode.GPU) + int(c.pme == PMEMode.GPU),
+            )
             for c in GmxTrialConfig.generate_all_configs()
         ]
 
