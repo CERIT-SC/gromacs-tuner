@@ -32,7 +32,7 @@ def run_pmemd(
     trial_id: str,
     job_id: str,
     extra_args: str = "",
-    nsteps: int = 10_000,
+    nsteps: int = 25_000,
     best_steps_per_sec: float = 0.0,
 ) -> tuple[float, float, bool]:
     """

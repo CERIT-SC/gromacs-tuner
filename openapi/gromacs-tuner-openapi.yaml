@@ -128,7 +128,7 @@ paths:
                   description: AMBER input file (`.mdin`). Physics parameters are preserved; benchmark-only params are patched.
                 nsteps:
                   type: integer
-                  default: 10000
+                  default: 25000
                   minimum: 1
                   description: Number of pmemd steps per trial.
                 extra_args:

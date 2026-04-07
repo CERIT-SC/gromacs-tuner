@@ -42,7 +42,7 @@ async def create_amber_tuning_job(
     prmtop: Annotated[UploadFile, File()],
     inpcrd: Annotated[UploadFile, File()],
     mdin: Annotated[UploadFile, File()],
-    nsteps: Annotated[int, Form(ge=1)] = 10_000,
+    nsteps: Annotated[int, Form(ge=1)] = 25_000,
     extra_args: Annotated[str, Form()] = "",
 ) -> APIResponse:
     """
