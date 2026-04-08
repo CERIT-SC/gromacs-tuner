@@ -3,11 +3,11 @@
 import logging
 from typing import Annotated
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Response
 from fastapi.security import HTTPBasicCredentials
 from starlette.concurrency import run_in_threadpool
 
-from api.auth import APIResponse, verify_credentials
+from api.auth import verify_credentials
 from api.db.operations import delete_job, get_job, get_trial
 from api.rayworker import cancel_job
 from api.utils import cleanup_job_files, read_trial_log
@@ -43,7 +43,7 @@ async def get_trial_stderr(
 
 async def delete_tuning_job(
     job_id: str, _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)]
-) -> APIResponse:
+) -> Response:
     """Cancel, delete from DB, and clean up files for a tuning job."""
     job = await run_in_threadpool(get_job, job_id)
     if not job:
@@ -54,4 +54,4 @@ async def delete_tuning_job(
     await run_in_threadpool(cleanup_job_files, job_id)
 
     logger.info("Deleted job %s: cancelled=%s", job_id, cancelled)
-    return APIResponse(success=True, data={"id": job_id, "cancelled": cancelled}, message="Tuning job deleted")
+    return Response(status_code=204)

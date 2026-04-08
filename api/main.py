@@ -1,17 +1,17 @@
 import logging
-from dataclasses import asdict
 from pathlib import Path
 from typing import Annotated, Any
 
 import yaml
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasicCredentials
 from starlette.concurrency import run_in_threadpool
 
-from api.auth import APIResponse, verify_credentials
+from api.auth import verify_credentials
 from api.routers.amber import router as amber_router
 from api.routers.gmx import router as gmx_router
+from api.schemas.common import HealthResponse, ResourcesResponse
 from api.utils import get_cluster_status
 
 logger = logging.getLogger(__name__)
@@ -28,24 +28,25 @@ app.include_router(amber_router, prefix="/api/tuning-jobs/amber")
 @app.get("/api/resources")
 async def get_cluster_resources_endpoint(
     _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)],
-) -> APIResponse:
+) -> ResourcesResponse:
     """Get current Ray cluster resource utilization."""
     resources = await run_in_threadpool(get_cluster_status)
     if resources is None:
-        return APIResponse(
-            success=False, data={}, message="Cluster resources unavailable - Ray may not be initialized"
-        )
-    return APIResponse(
-        success=True,
-        data={**asdict(resources), "used_cpus": resources.used_cpus, "used_gpus": resources.used_gpus},
-        message="Cluster resources retrieved",
+        raise HTTPException(status_code=503, detail="Cluster resources unavailable - Ray may not be initialized")
+    return ResourcesResponse(
+        total_cpus=resources.total_cpus,
+        total_gpus=resources.total_gpus,
+        available_cpus=resources.available_cpus,
+        available_gpus=resources.available_gpus,
+        used_cpus=resources.used_cpus,
+        used_gpus=resources.used_gpus,
     )
 
 
 @app.get("/api/health")
-async def health_check() -> APIResponse:
+async def health_check() -> HealthResponse:
     """Return a liveness check response."""
-    return APIResponse(success=True, data={"status": "ok"}, message="API is healthy")
+    return HealthResponse(status="ok")
 
 
 @app.get("/openapi.json", include_in_schema=False)
