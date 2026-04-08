@@ -21,8 +21,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY pmemd24*.tar.bz2 /tmp/
 RUN tar -xjf /tmp/pmemd24*.tar.bz2 -C /tmp \
     && rm /tmp/pmemd24*.tar.bz2 \
-    # Only SM7.5 (T4, RTX 2080/Ti) and SM8.6 (A40) — the cluster's GPUs. Default is 7 archs.
-    && sed -i 's/${SM70FLAGS} ${SM75FLAGS} ${SM80FLAGS} ${SM86FLAGS} ${SM90FLAGS} ${SM100FLAGS} ${SM120FLAGS}/${SM75FLAGS} ${SM86FLAGS}/' \
+    # Only SM7.5 (T4, RTX 2080/Ti), SM8.0 (A100), SM8.6 (A40) — the cluster's GPUs. Default is 7 archs.
+    && sed -i 's/${SM70FLAGS} ${SM75FLAGS} ${SM80FLAGS} ${SM86FLAGS} ${SM90FLAGS} ${SM100FLAGS} ${SM120FLAGS}/${SM75FLAGS} ${SM80FLAGS} ${SM86FLAGS}/' \
        /tmp/pmemd24_src/cmake/CudaConfig.cmake
 
 RUN cmake -S /tmp/pmemd24_src -B /tmp/pmemd24_build \
