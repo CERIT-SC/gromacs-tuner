@@ -319,6 +319,9 @@ components:
         np:
           type: integer
           description: Number of MPI ranks (only relevant for pmemd.MPI).
+        ntomp:
+          type: integer
+          description: OpenMP threads per MPI rank.
         ewald:
           type: string
           enum: [default, optimized]
