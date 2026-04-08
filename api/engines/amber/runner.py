@@ -54,11 +54,13 @@ def run_pmemd(
 
     mdout = trial_dir / "mdout"
     mdinfo = trial_dir / "mdinfo"
+    restart = trial_dir / "restart.rst7"
+    traj = trial_dir / "traj.nc"
 
     env = os.environ.copy()
     env["OMP_NUM_THREADS"] = str(config.ntomp)  # CUDA ntomp is always 1; set unconditionally for predictability
 
-    cmd = _build_command(config, str(patched_mdin), prmtop, inpcrd, str(mdout), str(mdinfo))
+    cmd = _build_command(config, str(patched_mdin), prmtop, inpcrd, str(mdout), str(mdinfo), str(restart), str(traj))
     if extra_args:
         cmd += shlex.split(extra_args)
 
@@ -79,7 +81,8 @@ def run_pmemd(
 
 
 def _build_command(
-    config: AmberTrialConfig, mdin: str, prmtop: str, inpcrd: str, mdout: str, mdinfo: str
+    config: AmberTrialConfig, mdin: str, prmtop: str, inpcrd: str, mdout: str, mdinfo: str,
+    restart: str, traj: str,
 ) -> list[str]:
     base = [
         config.binary.value, "-O",
@@ -88,8 +91,8 @@ def _build_command(
         "-c", inpcrd,
         "-o", mdout,
         "-inf", mdinfo,
-        "-r", "/dev/null",
-        "-x", "/dev/null",
+        "-r", restart,
+        "-x", traj,
     ]
     if config.binary == AmberBinary.PMEMD_MPI:
         return ["mpirun", "-np", str(config.np), *base]
@@ -119,12 +122,20 @@ def _run_command_with_monitoring(
     best_steps_per_sec: float,
     env: dict[str, str],
 ) -> tuple[bool, float] | None:
+    stdout_path = cwd / "stdout.log"
+    stderr_path = cwd / "stderr.log"
     try:
-        with subprocess.Popen(
-            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+        with stdout_path.open("w") as stdout_file, stderr_path.open("w") as stderr_file, subprocess.Popen(
+            cmd, stdout=stdout_file, stderr=stderr_file,
             text=True, cwd=cwd, start_new_session=True, env=env,
         ) as process:
-            return _monitor_process(process, mdinfo, context, best_steps_per_sec)
+            result = _monitor_process(process, mdinfo, context, best_steps_per_sec)
+        if result is None:
+            for label, path in (("stdout", stdout_path), ("stderr", stderr_path)):
+                content = path.read_text().strip()
+                if content:
+                    logger.error("%s %s:\n%s", context, label, content)
+        return result
     except OSError as e:
         if e.errno == errno.ESTALE:
             logger.info("%s logs removed while job was deleted; skipping error", context)

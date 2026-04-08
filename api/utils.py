@@ -10,7 +10,7 @@ import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import ray
 from fastapi import UploadFile
@@ -139,6 +139,15 @@ def tail(file: Path | str, n: int = 10) -> str:
             return b"\n".join(list(lines_found)[-n:]).decode("utf-8", "replace")
     except FileNotFoundError:
         logger.debug("File not found: %s", file_path)
+        return ""
+
+
+def read_trial_log(job_id: str, trial_id: str, stream: Literal["stdout", "stderr"]) -> str:
+    """Read a trial's stdout or stderr log file. Returns empty string if not yet written."""
+    path = JOBS_DIR / job_id / trial_id / f"{stream}.log"
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except FileNotFoundError:
         return ""
 
 
