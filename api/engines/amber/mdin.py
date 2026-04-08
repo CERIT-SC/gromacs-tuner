@@ -75,7 +75,7 @@ def _remove_param(line: str, keys: set[str]) -> str:
     """Remove any 'key = value,' occurrences from a line for the given keys."""
     for key in keys:
         line = re.sub(
-            rf'\b{re.escape(key)}\s*=\s*[^\s,]+,?\s*',
+            rf"\b{re.escape(key)}\s*=\s*[^\s,]+,?\s*",
             "",
             line,
             flags=re.IGNORECASE,

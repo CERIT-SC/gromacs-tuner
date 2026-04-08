@@ -19,9 +19,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     with op.batch_alter_table("jobs") as batch_op:
-        batch_op.add_column(
-            sa.Column("engine", sa.String(), nullable=False, server_default="gmx")
-        )
+        batch_op.add_column(sa.Column("engine", sa.String(), nullable=False, server_default="gmx"))
         batch_op.create_index("ix_jobs_engine", ["engine"])
 
 

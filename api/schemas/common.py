@@ -1,9 +1,8 @@
 """Shared types across all engines."""
 
-from dataclasses import dataclass
 from enum import Enum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 
 
 class JobStatus(str, Enum):
@@ -37,31 +36,21 @@ class ResourcesResponse(BaseModel):
     total_gpus: int
     available_cpus: int
     available_gpus: int
-    used_cpus: int
-    used_gpus: int
+
+    @computed_field
+    @property
+    def used_cpus(self) -> int:
+        """CPU cores currently in use."""
+        return self.total_cpus - self.available_cpus
+
+    @computed_field
+    @property
+    def used_gpus(self) -> int:
+        """GPUs currently in use."""
+        return self.total_gpus - self.available_gpus
 
 
 class HealthResponse(BaseModel):
     """API liveness check response."""
 
     status: str
-
-
-@dataclass
-class ClusterResources:
-    """Current Ray cluster resource utilization."""
-
-    total_cpus: int
-    total_gpus: int
-    available_cpus: int
-    available_gpus: int
-
-    @property
-    def used_cpus(self) -> int:
-        """Number of CPUs currently allocated by running tasks."""
-        return self.total_cpus - self.available_cpus
-
-    @property
-    def used_gpus(self) -> int:
-        """Number of GPUs currently allocated by running tasks."""
-        return self.total_gpus - self.available_gpus

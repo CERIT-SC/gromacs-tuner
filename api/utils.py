@@ -16,7 +16,7 @@ import ray
 from fastapi import UploadFile
 
 from api.config import JOBS_DIR, TPR_DIR
-from api.schemas.common import ClusterResources
+from api.schemas.common import ResourcesResponse
 
 logger = logging.getLogger(__name__)
 
@@ -74,18 +74,18 @@ CLUSTER_STATUS_TTL = 10.0
 RAY_FETCH_TIMEOUT = 4.0
 
 
-def get_cluster_status() -> ClusterResources | None:
+def get_cluster_status() -> ResourcesResponse | None:
     """Get current Ray cluster resource usage with caching."""
     now = time.time()
     if now - _cluster_status_cache["time"] < CLUSTER_STATUS_TTL:
         return _cluster_status_cache["data"]
 
-    def _fetch() -> ClusterResources | None:
+    def _fetch() -> ResourcesResponse | None:
         try:
             if not ray.is_initialized():
                 return None
             total, avail = ray.cluster_resources(), ray.available_resources()
-            return ClusterResources(
+            return ResourcesResponse(
                 total_cpus=int(total.get("CPU", 0)),
                 total_gpus=int(total.get("GPU", 0)),
                 available_cpus=int(avail.get("CPU", 0)),

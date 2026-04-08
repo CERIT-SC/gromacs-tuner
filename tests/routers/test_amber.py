@@ -12,8 +12,10 @@ AUTH = ("admin", "gromacs123")
 def _fake_prmtop() -> BytesIO:
     return BytesIO(b"fake prmtop content")
 
+
 def _fake_inpcrd() -> BytesIO:
     return BytesIO(b"fake inpcrd content")
+
 
 def _fake_mdin() -> BytesIO:
     return BytesIO(b" &cntrl\n  nstlim = 10000,\n /\n")

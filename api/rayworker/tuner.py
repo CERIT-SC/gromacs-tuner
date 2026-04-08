@@ -128,7 +128,10 @@ def _run_single_trial(
     status = JobStatus.TERMINATED if result.performance > 0 or result.early_stopped else JobStatus.ERROR
     logger.info(
         "Trial %s completed: status=%s, performance=%.2f ns/day, steps/sec=%.1f",
-        trial_id, status, result.performance or 0.0, result.steps_per_sec,
+        trial_id,
+        status,
+        result.performance or 0.0,
+        result.steps_per_sec,
     )
     return {
         "trial_id": trial_id,
@@ -154,7 +157,13 @@ def _submit_trials(
     future_to_trial: dict[ray.ObjectRef, int] = {}
     for trial_id, cfg in trials:
         future = _run_single_trial.options(num_cpus=cfg.num_cpus, num_gpus=cfg.num_gpus).remote(
-            job_id, str(trial_id), cfg, engine, extra_args, nsteps, best_steps_per_sec,  # type: ignore[misc]
+            job_id,
+            str(trial_id),
+            cfg,
+            engine,
+            extra_args,
+            nsteps,
+            best_steps_per_sec,  # type: ignore[misc]
         )
         future_to_trial[future] = trial_id
         update_trial_result(trial_id, JobStatus.RUNNING, None)
@@ -199,10 +208,7 @@ def _run_tuning_async(job_id: str, engine: Engine, extra_args: str = "", nsteps:
     try:
         # Create trial records before connecting to Ray so GET returns them immediately.
         all_configs = engine.generate_configs()
-        trial_configs = [
-            (create_trial_result(job_id, cfg.params, JobStatus.PENDING, None), cfg)
-            for cfg in all_configs
-        ]
+        trial_configs = [(create_trial_result(job_id, cfg.params, JobStatus.PENDING, None), cfg) for cfg in all_configs]
         trial_configs = _order_trial_configs(trial_configs)
 
         _ensure_ray_initialized()
@@ -223,7 +229,7 @@ def _run_tuning_async(job_id: str, engine: Engine, extra_args: str = "", nsteps:
             if _job_context.is_cancelled(job_id):
                 logger.info("Job %s cancelled, skipping remaining trials", job_id)
                 break
-            batch = remaining_trials[idx: idx + batch_size]
+            batch = remaining_trials[idx : idx + batch_size]
             future_to_trial = _submit_trials(job_id, extra_args, batch, engine, nsteps, best_steps_per_sec)
             best_steps_per_sec = _process_trial_results(job_id, future_to_trial, best_steps_per_sec)
 
