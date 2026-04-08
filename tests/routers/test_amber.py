@@ -24,7 +24,7 @@ class TestCreateAmberTuningJob:
     def test_returns_job_id(self, mock_submit) -> None:
         mock_submit.return_value = "test-amber-job"
         response = client.post(
-            "/api/amber/tuning-jobs",
+            "/api/tuning-jobs/amber",
             auth=AUTH,
             files={
                 "prmtop": ("system.prmtop", _fake_prmtop(), "application/octet-stream"),
@@ -38,7 +38,7 @@ class TestCreateAmberTuningJob:
 
     def test_rejects_wrong_prmtop_extension(self) -> None:
         response = client.post(
-            "/api/amber/tuning-jobs",
+            "/api/tuning-jobs/amber",
             auth=AUTH,
             files={
                 "prmtop": ("system.txt", _fake_prmtop(), "application/octet-stream"),
@@ -50,7 +50,7 @@ class TestCreateAmberTuningJob:
 
     def test_requires_auth(self) -> None:
         response = client.post(
-            "/api/amber/tuning-jobs",
+            "/api/tuning-jobs/amber",
             files={
                 "prmtop": ("system.prmtop", _fake_prmtop(), "application/octet-stream"),
                 "inpcrd": ("system.inpcrd", _fake_inpcrd(), "application/octet-stream"),
@@ -72,7 +72,7 @@ class TestGetAmberStatus:
         mock_get_job.return_value = job
         mock_trials.return_value = []
 
-        response = client.get("/api/amber/tuning-jobs/test-id/status", auth=AUTH)
+        response = client.get("/api/tuning-jobs/amber/test-id/status", auth=AUTH)
         assert response.status_code == 200
 
     @patch("api.routers.amber.get_job")
@@ -80,5 +80,5 @@ class TestGetAmberStatus:
         job = MagicMock()
         job.engine = "gmx"
         mock_get_job.return_value = job
-        response = client.get("/api/amber/tuning-jobs/some-gmx-job/status", auth=AUTH)
+        response = client.get("/api/tuning-jobs/amber/some-gmx-job/status", auth=AUTH)
         assert response.status_code == 404

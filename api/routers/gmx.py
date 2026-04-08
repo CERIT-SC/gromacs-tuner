@@ -1,4 +1,4 @@
-"""GMX tuning job endpoints — /api/gmx/tuning-jobs."""
+"""GMX tuning job endpoints — /api/tuning-jobs/gmx."""
 
 import logging
 import uuid
@@ -14,18 +14,19 @@ from starlette.concurrency import run_in_threadpool
 
 from api.auth import APIResponse, verify_credentials
 from api.config import MAX_UPLOAD_SIZE, TPR_DIR
-from api.db.operations import delete_job, get_job, get_trial, get_trials_by_job_id
+from api.db.operations import get_job, get_trials_by_job_id
 from api.engines.gmx.engine import GmxEngine
-from api.rayworker import cancel_job, submit_tuning_job, sync_job_status
+from api.rayworker import submit_tuning_job, sync_job_status
+from api.routers._shared import delete_tuning_job, get_trial_stderr, get_trial_stdout
 from api.schemas.common import JobStatus, MDEngine
 from api.schemas.gmx import GmxTrialResponse
-from api.utils import cleanup_job_files, read_trial_log, sanitize_extra_args, save_upload
+from api.utils import GMX_FORBIDDEN_FLAGS, cleanup_job_files, sanitize_extra_args, save_upload
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("/tuning-jobs")
+@router.post("")
 async def create_gmx_tuning_job(
     _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)],
     file: Annotated[UploadFile, File()],
@@ -39,7 +40,7 @@ async def create_gmx_tuning_job(
         HTTPException: 400/413 on invalid input, 500 on submission failure.
     """
     try:
-        sanitized_args = sanitize_extra_args(extra_args)
+        sanitized_args = sanitize_extra_args(extra_args, GMX_FORBIDDEN_FLAGS)
     except (ValidationError, ValueError) as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
@@ -61,7 +62,7 @@ async def create_gmx_tuning_job(
     return APIResponse(success=True, data={"id": job_id, "status": JobStatus.PENDING}, message="Tuning job started")
 
 
-@router.get("/tuning-jobs/{job_id}/status")
+@router.get("/{job_id}/status")
 async def get_gmx_status(
     job_id: str, _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)]
 ) -> APIResponse:
@@ -104,51 +105,23 @@ async def get_gmx_status(
     )
 
 
-@router.get("/tuning-jobs/{job_id}/trials/{trial_id}/stdout", response_class=PlainTextResponse)
-async def get_gmx_trial_stdout(
-    job_id: str, trial_id: str, _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)]
-) -> str:
-    """Return stdout log for a GMX trial. Empty string if the trial has not produced output yet."""
-    job = await run_in_threadpool(get_job, job_id)
-    if not job or job.engine != MDEngine.GMX:
-        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
-    trial = await run_in_threadpool(get_trial, int(trial_id), job_id)
-    if not trial:
-        raise HTTPException(status_code=404, detail=f"Trial '{trial_id}' not found")
-    return await run_in_threadpool(read_trial_log, job_id, trial_id, "stdout")
-
-
-@router.get("/tuning-jobs/{job_id}/trials/{trial_id}/stderr", response_class=PlainTextResponse)
-async def get_gmx_trial_stderr(
-    job_id: str, trial_id: str, _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)]
-) -> str:
-    """Return stderr log for a GMX trial. Empty string if the trial has not produced output yet."""
-    job = await run_in_threadpool(get_job, job_id)
-    if not job or job.engine != MDEngine.GMX:
-        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
-    trial = await run_in_threadpool(get_trial, int(trial_id), job_id)
-    if not trial:
-        raise HTTPException(status_code=404, detail=f"Trial '{trial_id}' not found")
-    return await run_in_threadpool(read_trial_log, job_id, trial_id, "stderr")
-
-
-@router.delete("/tuning-jobs/{job_id}")
-async def delete_gmx_tuning_job(
-    job_id: str, _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)]
-) -> APIResponse:
-    """
-    Delete a GMX tuning job.
-
-    Raises:
-        HTTPException: 404 if job not found or belongs to a different engine.
-    """
-    job = await run_in_threadpool(get_job, job_id)
-    if not job or job.engine != MDEngine.GMX:
-        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
-
-    cancelled = await run_in_threadpool(cancel_job, job_id)
-    await run_in_threadpool(delete_job, job_id)
-    await run_in_threadpool(cleanup_job_files, job_id)
-
-    logger.info("Deleted GMX job %s: cancelled=%s", job_id, cancelled)
-    return APIResponse(success=True, data={"id": job_id, "cancelled": cancelled}, message="Tuning job deleted")
+router.add_api_route(
+    "/{job_id}/trials/{trial_id}/stdout",
+    get_trial_stdout,
+    methods=["GET"],
+    response_class=PlainTextResponse,
+    summary="Get trial stdout log",
+)
+router.add_api_route(
+    "/{job_id}/trials/{trial_id}/stderr",
+    get_trial_stderr,
+    methods=["GET"],
+    response_class=PlainTextResponse,
+    summary="Get trial stderr log",
+)
+router.add_api_route(
+    "/{job_id}",
+    delete_tuning_job,
+    methods=["DELETE"],
+    summary="Delete a tuning job",
+)

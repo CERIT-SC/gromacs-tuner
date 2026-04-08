@@ -21,8 +21,8 @@ app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"]
 )
 
-app.include_router(gmx_router, prefix="/api/gmx")
-app.include_router(amber_router, prefix="/api/amber")
+app.include_router(gmx_router, prefix="/api/tuning-jobs/gmx")
+app.include_router(amber_router, prefix="/api/tuning-jobs/amber")
 
 
 @app.get("/api/resources")
