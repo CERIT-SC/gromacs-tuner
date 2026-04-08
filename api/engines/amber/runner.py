@@ -55,11 +55,14 @@ def run_pmemd(
     mdout = trial_dir / "mdout"
     mdinfo = trial_dir / "mdinfo"
 
+    env = os.environ.copy()
+    env["OMP_NUM_THREADS"] = str(config.ntomp)  # CUDA ntomp is always 1; set unconditionally for predictability
+
     cmd = _build_command(config, str(patched_mdin), prmtop, inpcrd, str(mdout), str(mdinfo))
     if extra_args:
         cmd += shlex.split(extra_args)
 
-    result = _run_command_with_monitoring(cmd, mdout, mdinfo, trial_dir, f"Trial {trial_id}", best_steps_per_sec)
+    result = _run_command_with_monitoring(cmd, mdout, mdinfo, trial_dir, f"Trial {trial_id}", best_steps_per_sec, env)
     if result is None:
         return 0.0, 0.0, False
 
@@ -114,11 +117,12 @@ def _run_command_with_monitoring(
     cwd: Path,
     context: str,
     best_steps_per_sec: float,
+    env: dict[str, str],
 ) -> tuple[bool, float] | None:
     try:
         with subprocess.Popen(
             cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-            text=True, cwd=cwd, start_new_session=True,
+            text=True, cwd=cwd, start_new_session=True, env=env,
         ) as process:
             return _monitor_process(process, mdinfo, context, best_steps_per_sec)
     except OSError as e:
