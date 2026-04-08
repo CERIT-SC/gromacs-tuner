@@ -44,7 +44,7 @@ paths:
                     Shell metacharacters (; & | ` $ ( ) < >) are forbidden.
                     Critical flags (-deffnm, -s, -nsteps, -ntomp, -np, -nb, -pme) cannot be overridden.
       responses:
-        "200":
+        "201":
           description: Tuning job started.
           content:
             application/json:
@@ -86,12 +86,8 @@ paths:
       parameters:
         - $ref: "#/components/parameters/JobId"
       responses:
-        "200":
+        "204":
           description: Job deleted.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/JobDeletedResponse"
         "401":
           description: Unauthorized.
         "404":
@@ -180,7 +176,7 @@ paths:
                     Shell metacharacters (; & | ` $ ( ) < >) are forbidden.
                     Critical flags (-i, -p, -c, -o, -inf, -r, -x, -O) cannot be overridden.
       responses:
-        "200":
+        "201":
           description: Tuning job started.
           content:
             application/json:
@@ -222,12 +218,8 @@ paths:
       parameters:
         - $ref: "#/components/parameters/JobId"
       responses:
-        "200":
+        "204":
           description: Job deleted.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/JobDeletedResponse"
         "401":
           description: Unauthorized.
         "404":
@@ -280,13 +272,15 @@ paths:
         - basicAuth: []
       responses:
         "200":
-          description: Cluster resources retrieved (or empty data if Ray is unavailable).
+          description: Cluster resources retrieved.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ResourcesResponse"
         "401":
           description: Unauthorized.
+        "503":
+          description: Ray cluster not initialized.
 
   /health:
     get:
@@ -322,50 +316,20 @@ components:
       description: Trial identifier (integer ID as string).
 
   schemas:
-    APIResponse:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          type: object
-        message:
-          type: string
-        error:
-          type: object
-          nullable: true
-
     JobCreatedResponse:
-      allOf:
-        - $ref: "#/components/schemas/APIResponse"
-        - type: object
-          properties:
-            data:
-              type: object
-              properties:
-                id:
-                  type: string
-                  description: UUID of the created job.
-                status:
-                  type: string
-                  example: PENDING
-
-    JobDeletedResponse:
-      allOf:
-        - $ref: "#/components/schemas/APIResponse"
-        - type: object
-          properties:
-            data:
-              type: object
-              properties:
-                id:
-                  type: string
-                cancelled:
-                  type: boolean
-                  description: Whether the job was actively cancelled (vs already finished).
+      type: object
+      required: [id, status]
+      properties:
+        id:
+          type: string
+          description: UUID of the created job.
+        status:
+          type: string
+          example: PENDING
 
     GmxTrial:
       type: object
+      required: [id, status, np, ntomp, nb, pme]
       properties:
         id:
           type: string
@@ -393,6 +357,7 @@ components:
 
     AmberTrial:
       type: object
+      required: [id, status, binary, np, ntomp, ewald]
       properties:
         id:
           type: string
@@ -419,76 +384,60 @@ components:
           description: Performance in ns/day; null if trial is pending/running/early-stopped.
 
     GmxStatusResponse:
-      allOf:
-        - $ref: "#/components/schemas/APIResponse"
-        - type: object
-          properties:
-            data:
-              type: object
-              properties:
-                id:
-                  type: string
-                status:
-                  type: string
-                  enum: [UNKNOWN, PENDING, RUNNING, TERMINATED, ERROR]
-                error:
-                  type: string
-                  nullable: true
-                trials:
-                  type: array
-                  items:
-                    $ref: "#/components/schemas/GmxTrial"
+      type: object
+      required: [id, status, trials]
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [UNKNOWN, PENDING, RUNNING, TERMINATED, ERROR]
+        error:
+          type: string
+          nullable: true
+        trials:
+          type: array
+          items:
+            $ref: "#/components/schemas/GmxTrial"
 
     AmberStatusResponse:
-      allOf:
-        - $ref: "#/components/schemas/APIResponse"
-        - type: object
-          properties:
-            data:
-              type: object
-              properties:
-                id:
-                  type: string
-                status:
-                  type: string
-                  enum: [UNKNOWN, PENDING, RUNNING, TERMINATED, ERROR]
-                error:
-                  type: string
-                  nullable: true
-                trials:
-                  type: array
-                  items:
-                    $ref: "#/components/schemas/AmberTrial"
+      type: object
+      required: [id, status, trials]
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [UNKNOWN, PENDING, RUNNING, TERMINATED, ERROR]
+        error:
+          type: string
+          nullable: true
+        trials:
+          type: array
+          items:
+            $ref: "#/components/schemas/AmberTrial"
 
     ResourcesResponse:
-      allOf:
-        - $ref: "#/components/schemas/APIResponse"
-        - type: object
-          properties:
-            data:
-              type: object
-              properties:
-                total_cpus:
-                  type: integer
-                total_gpus:
-                  type: integer
-                available_cpus:
-                  type: integer
-                available_gpus:
-                  type: integer
-                used_cpus:
-                  type: integer
-                used_gpus:
-                  type: integer
+      type: object
+      required: [total_cpus, total_gpus, available_cpus, available_gpus, used_cpus, used_gpus]
+      properties:
+        total_cpus:
+          type: integer
+        total_gpus:
+          type: integer
+        available_cpus:
+          type: integer
+        available_gpus:
+          type: integer
+        used_cpus:
+          type: integer
+        used_gpus:
+          type: integer
 
     HealthResponse:
-      allOf:
-        - $ref: "#/components/schemas/APIResponse"
-        - type: object
-          properties:
-            data:
-              type: object
-              properties:
-                status:
-                  type: string
-                  example: ok
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          example: ok

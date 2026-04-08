@@ -1,12 +1,11 @@
 """GMX-specific response schemas."""
 
-from dataclasses import dataclass
+from pydantic import BaseModel
 
 from api.schemas.common import JobStatus
 
 
-@dataclass
-class GmxTrialResponse:
+class GmxTrialResponse(BaseModel):
     """Trial result for a GMX tuning job."""
 
     id: str
@@ -16,3 +15,12 @@ class GmxTrialResponse:
     nb: str
     pme: str
     performance: float | None
+
+
+class GmxJobStatusResponse(BaseModel):
+    """Full status response for a GMX tuning job."""
+
+    id: str
+    status: JobStatus
+    error: str | None
+    trials: list[GmxTrialResponse]

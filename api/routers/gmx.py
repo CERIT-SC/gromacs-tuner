@@ -2,7 +2,6 @@
 
 import logging
 import uuid
-from dataclasses import asdict
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -12,27 +11,27 @@ from pydantic import ValidationError
 from sqlalchemy.exc import OperationalError
 from starlette.concurrency import run_in_threadpool
 
-from api.auth import APIResponse, verify_credentials
+from api.auth import verify_credentials
 from api.config import MAX_UPLOAD_SIZE, TPR_DIR
 from api.db.operations import get_job, get_trials_by_job_id
 from api.engines.gmx.engine import GmxEngine
 from api.rayworker import submit_tuning_job, sync_job_status
 from api.routers._shared import delete_tuning_job, get_trial_stderr, get_trial_stdout
-from api.schemas.common import JobStatus, MDEngine
-from api.schemas.gmx import GmxTrialResponse
+from api.schemas.common import JobCreatedResponse, JobStatus, MDEngine
+from api.schemas.gmx import GmxJobStatusResponse, GmxTrialResponse
 from api.utils import GMX_FORBIDDEN_FLAGS, cleanup_job_files, sanitize_extra_args, save_upload
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("")
+@router.post("", status_code=201)
 async def create_gmx_tuning_job(
     _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)],
     file: Annotated[UploadFile, File()],
     nsteps: Annotated[int, Form(ge=1)] = 25_000,
     extra_args: Annotated[str, Form()] = "",
-) -> APIResponse:
+) -> JobCreatedResponse:
     """
     Start a new GMX hyperparameter tuning run with a .tpr file.
 
@@ -59,13 +58,13 @@ async def create_gmx_tuning_job(
         raise HTTPException(status_code=500, detail=f"Failed to submit job: {e}") from e
 
     logger.info("Started GMX tuning job %s", job_id)
-    return APIResponse(success=True, data={"id": job_id, "status": JobStatus.PENDING}, message="Tuning job started")
+    return JobCreatedResponse(id=job_id, status=JobStatus.PENDING)
 
 
 @router.get("/{job_id}/status")
 async def get_gmx_status(
     job_id: str, _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)]
-) -> APIResponse:
+) -> GmxJobStatusResponse:
     """
     Get status of a GMX tuning job.
 
@@ -98,11 +97,7 @@ async def get_gmx_status(
         for t in raw_trials
     ]
 
-    return APIResponse(
-        success=True,
-        data={"id": job_id, "status": job.status, "error": job.error, "trials": [asdict(t) for t in trials]},
-        message="Status retrieved",
-    )
+    return GmxJobStatusResponse(id=job_id, status=job.status, error=job.error, trials=trials)
 
 
 router.add_api_route(
@@ -123,5 +118,6 @@ router.add_api_route(
     "/{job_id}",
     delete_tuning_job,
     methods=["DELETE"],
+    status_code=204,
     summary="Delete a tuning job",
 )

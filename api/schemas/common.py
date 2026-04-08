@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 from enum import Enum
 
+from pydantic import BaseModel
+
 
 class JobStatus(str, Enum):
     """Status of a tuning job or trial."""
@@ -19,6 +21,30 @@ class MDEngine(str, Enum):
 
     GMX = "gmx"
     AMBER = "amber"
+
+
+class JobCreatedResponse(BaseModel):
+    """Response for a newly created tuning job."""
+
+    id: str
+    status: JobStatus
+
+
+class ResourcesResponse(BaseModel):
+    """Ray cluster resource utilization."""
+
+    total_cpus: int
+    total_gpus: int
+    available_cpus: int
+    available_gpus: int
+    used_cpus: int
+    used_gpus: int
+
+
+class HealthResponse(BaseModel):
+    """API liveness check response."""
+
+    status: str
 
 
 @dataclass
