@@ -18,7 +18,7 @@ class TestCreateGmxTuningJob:
     def test_returns_job_id(self, mock_submit) -> None:
         mock_submit.return_value = "test-job-id"
         response = client.post(
-            "/api/gmx/tuning-jobs",
+            "/api/tuning-jobs/gmx",
             auth=AUTH,
             files={"file": ("md.tpr", _fake_tpr(), "application/octet-stream")},
             data={"nsteps": "1000"},
@@ -29,7 +29,7 @@ class TestCreateGmxTuningJob:
 
     def test_rejects_wrong_extension(self) -> None:
         response = client.post(
-            "/api/gmx/tuning-jobs",
+            "/api/tuning-jobs/gmx",
             auth=AUTH,
             files={"file": ("md.txt", BytesIO(b"bad"), "text/plain")},
         )
@@ -37,7 +37,7 @@ class TestCreateGmxTuningJob:
 
     def test_requires_auth(self) -> None:
         response = client.post(
-            "/api/gmx/tuning-jobs",
+            "/api/tuning-jobs/gmx",
             files={"file": ("md.tpr", _fake_tpr(), "application/octet-stream")},
         )
         assert response.status_code == 401
@@ -55,14 +55,14 @@ class TestGetGmxStatus:
         mock_get_job.return_value = job
         mock_trials.return_value = []
 
-        response = client.get("/api/gmx/tuning-jobs/test-id/status", auth=AUTH)
+        response = client.get("/api/tuning-jobs/gmx/test-id/status", auth=AUTH)
         assert response.status_code == 200
         assert response.json()["data"]["status"] == "RUNNING"
 
     @patch("api.routers.gmx.get_job")
     def test_returns_404_for_missing_job(self, mock_get_job) -> None:
         mock_get_job.return_value = None
-        response = client.get("/api/gmx/tuning-jobs/nonexistent/status", auth=AUTH)
+        response = client.get("/api/tuning-jobs/gmx/nonexistent/status", auth=AUTH)
         assert response.status_code == 404
 
     @patch("api.routers.gmx.get_job")
@@ -70,18 +70,18 @@ class TestGetGmxStatus:
         job = MagicMock()
         job.engine = "amber"
         mock_get_job.return_value = job
-        response = client.get("/api/gmx/tuning-jobs/some-amber-job/status", auth=AUTH)
+        response = client.get("/api/tuning-jobs/gmx/some-amber-job/status", auth=AUTH)
         assert response.status_code == 404
 
 
 class TestDeleteGmxTuningJob:
-    @patch("api.routers.gmx.get_job")
-    @patch("api.routers.gmx.cancel_job")
-    @patch("api.routers.gmx.delete_job")
-    @patch("api.routers.gmx.cleanup_job_files")
+    @patch("api.routers._shared.get_job")
+    @patch("api.routers._shared.cancel_job")
+    @patch("api.routers._shared.delete_job")
+    @patch("api.routers._shared.cleanup_job_files")
     def test_deletes_job(self, mock_cleanup, mock_delete, mock_cancel, mock_get_job) -> None:
-        mock_get_job.return_value = MagicMock(engine="gmx")
+        mock_get_job.return_value = MagicMock()
         mock_cancel.return_value = True
-        response = client.delete("/api/gmx/tuning-jobs/test-id", auth=AUTH)
+        response = client.delete("/api/tuning-jobs/gmx/test-id", auth=AUTH)
         assert response.status_code == 200
         assert response.json()["success"] is True

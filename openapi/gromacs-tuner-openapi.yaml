@@ -11,7 +11,7 @@ security:
   - basicAuth: []
 
 paths:
-  /gmx/tuning-jobs:
+  /tuning-jobs/gmx:
     post:
       summary: Submit a GROMACS tuning job.
       description: Uploads a `.tpr` file and starts a GMX mdrun parameter search.
@@ -57,7 +57,7 @@ paths:
         "413":
           description: File too large.
 
-  /gmx/tuning-jobs/{job_id}/status:
+  /tuning-jobs/gmx/{job_id}/status:
     get:
       summary: Get GMX tuning job status.
       security:
@@ -78,9 +78,9 @@ paths:
         "503":
           description: Database busy.
 
-  /gmx/tuning-jobs/{job_id}:
+  /tuning-jobs/gmx/{job_id}:
     delete:
-      summary: Delete a GMX tuning job.
+      summary: Delete a tuning job.
       security:
         - basicAuth: []
       parameters:
@@ -97,9 +97,9 @@ paths:
         "404":
           description: Job not found.
 
-  /gmx/tuning-jobs/{job_id}/trials/{trial_id}/stdout:
+  /tuning-jobs/gmx/{job_id}/trials/{trial_id}/stdout:
     get:
-      summary: Get GMX trial stdout log.
+      summary: Get trial stdout log.
       security:
         - basicAuth: []
       parameters:
@@ -117,9 +117,9 @@ paths:
         "404":
           description: Job or trial not found.
 
-  /gmx/tuning-jobs/{job_id}/trials/{trial_id}/stderr:
+  /tuning-jobs/gmx/{job_id}/trials/{trial_id}/stderr:
     get:
-      summary: Get GMX trial stderr log.
+      summary: Get trial stderr log.
       security:
         - basicAuth: []
       parameters:
@@ -137,7 +137,7 @@ paths:
         "404":
           description: Job or trial not found.
 
-  /amber/tuning-jobs:
+  /tuning-jobs/amber:
     post:
       summary: Submit an AMBER tuning job.
       description: Uploads prmtop + inpcrd + mdin files and starts a pmemd parameter search.
@@ -193,7 +193,7 @@ paths:
         "413":
           description: File too large.
 
-  /amber/tuning-jobs/{job_id}/status:
+  /tuning-jobs/amber/{job_id}/status:
     get:
       summary: Get AMBER tuning job status.
       security:
@@ -214,9 +214,9 @@ paths:
         "503":
           description: Database busy.
 
-  /amber/tuning-jobs/{job_id}:
+  /tuning-jobs/amber/{job_id}:
     delete:
-      summary: Delete an AMBER tuning job.
+      summary: Delete a tuning job.
       security:
         - basicAuth: []
       parameters:
@@ -233,9 +233,9 @@ paths:
         "404":
           description: Job not found.
 
-  /amber/tuning-jobs/{job_id}/trials/{trial_id}/stdout:
+  /tuning-jobs/amber/{job_id}/trials/{trial_id}/stdout:
     get:
-      summary: Get AMBER trial stdout log.
+      summary: Get trial stdout log.
       security:
         - basicAuth: []
       parameters:
@@ -253,9 +253,9 @@ paths:
         "404":
           description: Job or trial not found.
 
-  /amber/tuning-jobs/{job_id}/trials/{trial_id}/stderr:
+  /tuning-jobs/amber/{job_id}/trials/{trial_id}/stderr:
     get:
-      summary: Get AMBER trial stderr log.
+      summary: Get trial stderr log.
       security:
         - basicAuth: []
       parameters:
