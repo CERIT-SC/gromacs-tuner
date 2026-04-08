@@ -18,8 +18,8 @@ class TrialConfig:
 class TrialResult:
     """Result returned by every engine after a trial."""
 
-    performance: float       # ns/day; 0.0 on failure
-    steps_per_sec: float     # used for early stopping comparison
+    performance: float  # ns/day; 0.0 on failure
+    steps_per_sec: float  # used for early stopping comparison
     early_stopped: bool
 
 

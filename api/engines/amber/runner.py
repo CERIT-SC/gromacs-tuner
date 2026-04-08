@@ -48,9 +48,7 @@ def run_pmemd(
     mdin_source = TPR_DIR / f"{job_id}_md.mdin"
 
     patched_mdin = trial_dir / "mdin"
-    patched_mdin.write_text(
-        patch_mdin_for_benchmark(mdin_source.read_text(), nsteps, config.ewald)
-    )
+    patched_mdin.write_text(patch_mdin_for_benchmark(mdin_source.read_text(), nsteps, config.ewald))
 
     mdout = trial_dir / "mdout"
     mdinfo = trial_dir / "mdinfo"
@@ -72,7 +70,9 @@ def run_pmemd(
     if early_stopped:
         logger.info(
             "Trial %s early stopped (%.1f steps/s vs best %.1f)",
-            trial_id, final_steps_per_sec, best_steps_per_sec,
+            trial_id,
+            final_steps_per_sec,
+            best_steps_per_sec,
         )
         return 0.0, final_steps_per_sec, True
 
@@ -81,18 +81,32 @@ def run_pmemd(
 
 
 def _build_command(
-    config: AmberTrialConfig, mdin: str, prmtop: str, inpcrd: str, mdout: str, mdinfo: str,
-    restart: str, traj: str,
+    config: AmberTrialConfig,
+    mdin: str,
+    prmtop: str,
+    inpcrd: str,
+    mdout: str,
+    mdinfo: str,
+    restart: str,
+    traj: str,
 ) -> list[str]:
     base = [
-        config.binary.value, "-O",
-        "-i", mdin,
-        "-p", prmtop,
-        "-c", inpcrd,
-        "-o", mdout,
-        "-inf", mdinfo,
-        "-r", restart,
-        "-x", traj,
+        config.binary.value,
+        "-O",
+        "-i",
+        mdin,
+        "-p",
+        prmtop,
+        "-c",
+        inpcrd,
+        "-o",
+        mdout,
+        "-inf",
+        mdinfo,
+        "-r",
+        restart,
+        "-x",
+        traj,
     ]
     if config.binary == AmberBinary.PMEMD_MPI:
         return ["mpirun", "-np", str(config.np), *base]
@@ -101,13 +115,13 @@ def _build_command(
 
 def _parse_amber_performance(content: str) -> float:
     """Parse ns/day from mdout — last occurrence is the 'all steps' summary."""
-    matches = re.findall(r'ns/day\s*=\s*([\d.]+)', content)
+    matches = re.findall(r"ns/day\s*=\s*([\d.]+)", content)
     return float(matches[-1]) if matches else 0.0
 
 
 def _parse_amber_progress(content: str) -> int | None:
     """Parse current step number from mdinfo content."""
-    match = re.search(r'Nstep\s*=\s*(\d+)', content)
+    match = re.search(r"Nstep\s*=\s*(\d+)", content)
     if match:
         return int(match.group(1))
     return None
@@ -125,10 +139,19 @@ def _run_command_with_monitoring(
     stdout_path = cwd / "stdout.log"
     stderr_path = cwd / "stderr.log"
     try:
-        with stdout_path.open("w") as stdout_file, stderr_path.open("w") as stderr_file, subprocess.Popen(
-            cmd, stdout=stdout_file, stderr=stderr_file,
-            text=True, cwd=cwd, start_new_session=True, env=env,
-        ) as process:
+        with (
+            stdout_path.open("w") as stdout_file,
+            stderr_path.open("w") as stderr_file,
+            subprocess.Popen(
+                cmd,
+                stdout=stdout_file,
+                stderr=stderr_file,
+                text=True,
+                cwd=cwd,
+                start_new_session=True,
+                env=env,
+            ) as process,
+        ):
             result = _monitor_process(process, mdinfo, context, best_steps_per_sec)
         if result is None:
             for label, path in (("stdout", stdout_path), ("stderr", stderr_path)):
@@ -177,7 +200,10 @@ def _monitor_process(
         if _should_early_stop(current_step, elapsed, steps_per_sec, best_steps_per_sec):
             logger.info(
                 "%s: early stopping at step %d (%.1f steps/s < %.1f threshold)",
-                context, current_step, steps_per_sec, best_steps_per_sec * EARLY_STOP_THRESHOLD,
+                context,
+                current_step,
+                steps_per_sec,
+                best_steps_per_sec * EARLY_STOP_THRESHOLD,
             )
             _terminate_process_group(process, signal.SIGTERM)
             early_stopped = True
@@ -206,9 +232,7 @@ def _monitor_process(
     return early_stopped, steps_per_sec
 
 
-def _should_early_stop(
-    current_step: int, elapsed_time: float, steps_per_sec: float, best_steps_per_sec: float
-) -> bool:
+def _should_early_stop(current_step: int, elapsed_time: float, steps_per_sec: float, best_steps_per_sec: float) -> bool:
     if best_steps_per_sec <= 0:
         return False
     warmup_reached = (current_step >= EARLY_STOP_WARMUP_STEPS) or (elapsed_time >= EARLY_STOP_WARMUP_SECONDS)

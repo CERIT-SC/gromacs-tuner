@@ -57,20 +57,18 @@ def test_mpi_run_sets_omp_num_threads(tmp_path, monkeypatch) -> None:
     (tmp_path / "job1_md.inpcrd").write_text("")
     (tmp_path / "job1_md.mdin").write_text(" &cntrl\n  nstlim = 100,\n /\n")
 
-    config = AmberTrialConfig(
-        binary=AmberBinary.PMEMD_MPI, np=1, ewald=EwaldPreset.DEFAULT, ntomp=2
-    )
+    config = AmberTrialConfig(binary=AmberBinary.PMEMD_MPI, np=1, ewald=EwaldPreset.DEFAULT, ntomp=2)
 
     captured_env: dict = {}
 
     mock_proc = MagicMock()
-    mock_proc.poll.return_value = 0   # exits immediately — no monitoring loop
+    mock_proc.poll.return_value = 0  # exits immediately — no monitoring loop
     mock_proc.returncode = 0
     mock_proc.pid = 99999
     mock_proc.__enter__ = MagicMock(return_value=mock_proc)
     mock_proc.__exit__ = MagicMock(return_value=False)
 
-    def fake_popen(cmd, **kwargs):
+    def fake_popen(_cmd: list[str], **kwargs: object) -> object:
         captured_env.update(kwargs.get("env", {}))
         return mock_proc
 

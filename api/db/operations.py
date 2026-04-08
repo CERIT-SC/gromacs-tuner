@@ -72,9 +72,7 @@ def update_trial_result(trial_id: int, status: JobStatus, performance: float | N
 def get_trial(trial_id: int, job_id: str) -> Trial | None:
     """Fetch a single trial by ID, scoped to a job. Returns None if not found."""
     with get_session() as session:
-        return session.execute(
-            select(Trial).where(Trial.id == trial_id, Trial.job_id == job_id)
-        ).scalar_one_or_none()
+        return session.execute(select(Trial).where(Trial.id == trial_id, Trial.job_id == job_id)).scalar_one_or_none()
 
 
 def get_trials_by_job_id(job_id: str) -> list[Trial]:

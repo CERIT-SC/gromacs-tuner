@@ -18,7 +18,12 @@ logger = logging.getLogger(__name__)
 async def get_trial_stdout(
     job_id: str, trial_id: str, _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)]
 ) -> str:
-    """Return stdout log for a trial. Empty string if not yet written."""
+    """
+    Return stdout log for a trial. Empty string if not yet written.
+
+    Raises:
+        HTTPException: 404 if the job or trial is not found.
+    """
     job = await run_in_threadpool(get_job, job_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
@@ -31,7 +36,12 @@ async def get_trial_stdout(
 async def get_trial_stderr(
     job_id: str, trial_id: str, _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)]
 ) -> str:
-    """Return stderr log for a trial. Empty string if not yet written."""
+    """
+    Return stderr log for a trial. Empty string if not yet written.
+
+    Raises:
+        HTTPException: 404 if the job or trial is not found.
+    """
     job = await run_in_threadpool(get_job, job_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
@@ -41,10 +51,13 @@ async def get_trial_stderr(
     return await run_in_threadpool(read_trial_log, job_id, trial_id, "stderr")
 
 
-async def delete_tuning_job(
-    job_id: str, _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)]
-) -> Response:
-    """Cancel, delete from DB, and clean up files for a tuning job."""
+async def delete_tuning_job(job_id: str, _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)]) -> Response:
+    """
+    Cancel, delete from DB, and clean up files for a tuning job.
+
+    Raises:
+        HTTPException: 404 if the job is not found.
+    """
     job = await run_in_threadpool(get_job, job_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")

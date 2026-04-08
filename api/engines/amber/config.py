@@ -17,7 +17,7 @@ class AmberBinary(str, Enum):
 class EwaldPreset(str, Enum):
     """Ewald summation performance preset applied to the &ewald mdin namelist."""
 
-    DEFAULT = "default"      # netfrc=1, skin_permit=1.0
+    DEFAULT = "default"  # netfrc=1, skin_permit=1.0
     OPTIMIZED = "optimized"  # netfrc=0, skin_permit=0.75 — ~15-20% GPU speedup
 
 

@@ -29,18 +29,16 @@ app.include_router(amber_router, prefix="/api/tuning-jobs/amber")
 async def get_cluster_resources_endpoint(
     _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)],
 ) -> ResourcesResponse:
-    """Get current Ray cluster resource utilization."""
+    """
+    Get current Ray cluster resource utilization.
+
+    Raises:
+        HTTPException: 503 if Ray cluster resources are unavailable.
+    """
     resources = await run_in_threadpool(get_cluster_status)
     if resources is None:
         raise HTTPException(status_code=503, detail="Cluster resources unavailable - Ray may not be initialized")
-    return ResourcesResponse(
-        total_cpus=resources.total_cpus,
-        total_gpus=resources.total_gpus,
-        available_cpus=resources.available_cpus,
-        available_gpus=resources.available_gpus,
-        used_cpus=resources.used_cpus,
-        used_gpus=resources.used_gpus,
-    )
+    return resources
 
 
 @app.get("/api/health")
