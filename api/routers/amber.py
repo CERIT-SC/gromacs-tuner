@@ -104,6 +104,7 @@ async def get_amber_status(
             status=t.status,
             binary=t.config_json.get("binary", "pmemd.cuda"),
             np=t.config_json.get("np", 1),
+            ntomp=t.config_json.get("ntomp", 1),
             ewald=t.config_json.get("ewald", "default"),
             performance=t.performance,
         )

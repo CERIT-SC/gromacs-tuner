@@ -13,5 +13,6 @@ class AmberTrialResponse:
     status: JobStatus
     binary: str
     np: int
+    ntomp: int
     ewald: str
     performance: float | None
