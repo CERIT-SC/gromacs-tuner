@@ -59,7 +59,7 @@ def _patch_namelist(content: str, namelist: str, overrides: dict[str, Any]) -> s
         else:
             result.append(line)
 
-    return "\n".join(result)
+    return "\n".join(result) + "\n"
 
 
 def _append_namelist(content: str, namelist: str, params: dict[str, Any]) -> str:
