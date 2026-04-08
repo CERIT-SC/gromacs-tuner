@@ -1,4 +1,7 @@
-from api.engines.amber.runner import _parse_amber_performance, _parse_amber_progress
+from unittest.mock import MagicMock, patch
+
+from api.engines.amber.config import AmberBinary, AmberTrialConfig, EwaldPreset
+from api.engines.amber.runner import _parse_amber_performance, _parse_amber_progress, run_pmemd
 
 SAMPLE_MDOUT = """\
  NSTEP =     5000   TIME(PS) =      10.000  TEMP(K) =   300.12
@@ -43,3 +46,35 @@ def test_parse_progress_returns_none_on_empty() -> None:
 
 def test_parse_progress_returns_none_on_no_match() -> None:
     assert _parse_amber_progress("no steps here") is None
+
+
+def test_mpi_run_sets_omp_num_threads(tmp_path, monkeypatch) -> None:
+    """pmemd.MPI subprocess receives OMP_NUM_THREADS equal to config.ntomp."""
+    monkeypatch.setattr("api.engines.amber.runner.JOBS_DIR", tmp_path / "jobs")
+    monkeypatch.setattr("api.engines.amber.runner.TPR_DIR", tmp_path)
+
+    (tmp_path / "job1_md.prmtop").write_text("")
+    (tmp_path / "job1_md.inpcrd").write_text("")
+    (tmp_path / "job1_md.mdin").write_text(" &cntrl\n  nstlim = 100,\n /\n")
+
+    config = AmberTrialConfig(
+        binary=AmberBinary.PMEMD_MPI, np=1, ewald=EwaldPreset.DEFAULT, ntomp=2
+    )
+
+    captured_env: dict = {}
+
+    mock_proc = MagicMock()
+    mock_proc.poll.return_value = 0   # exits immediately — no monitoring loop
+    mock_proc.returncode = 0
+    mock_proc.pid = 99999
+    mock_proc.__enter__ = MagicMock(return_value=mock_proc)
+    mock_proc.__exit__ = MagicMock(return_value=False)
+
+    def fake_popen(cmd, **kwargs):
+        captured_env.update(kwargs.get("env", {}))
+        return mock_proc
+
+    with patch("subprocess.Popen", fake_popen):
+        run_pmemd(config, "t1", "job1", nsteps=100)
+
+    assert captured_env.get("OMP_NUM_THREADS") == "2"
