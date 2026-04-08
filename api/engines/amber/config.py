@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from api.config import AMBER_NP_OPTIONS, MAX_CPU, MAX_GPU
+from api.config import AMBER_NP_OPTIONS, AMBER_NTOMP_OPTIONS, MAX_CPU, MAX_GPU
 
 
 class AmberBinary(str, Enum):
@@ -28,11 +28,12 @@ class AmberTrialConfig:
     binary: AmberBinary
     np: int
     ewald: EwaldPreset
+    ntomp: int = 1
 
     @property
     def num_cpus(self) -> int:
-        """Number of CPU slots required (1 for CUDA, np for MPI)."""
-        return 1 if self.binary == AmberBinary.PMEMD_CUDA else self.np
+        """Number of CPU slots required (1 for CUDA, np*ntomp for MPI)."""
+        return 1 if self.binary == AmberBinary.PMEMD_CUDA else self.np * self.ntomp
 
     @property
     def num_gpus(self) -> int:
@@ -44,16 +45,17 @@ class AmberTrialConfig:
         """Generate all valid configs. GPU configs first (domain prior)."""
         configs = []
 
-        # GPU configs (pmemd.cuda, single GPU always)
+        # GPU configs (pmemd.cuda, single GPU, no OpenMP)
         if MAX_GPU >= 1:
             for ewald in EwaldPreset:
-                configs.append(cls(binary=AmberBinary.PMEMD_CUDA, np=1, ewald=ewald))
+                configs.append(cls(binary=AmberBinary.PMEMD_CUDA, np=1, ntomp=1, ewald=ewald))
 
-        # CPU configs, descending np to establish high baseline early
+        # CPU configs: descending np to establish high baseline early
         for np in sorted(AMBER_NP_OPTIONS, reverse=True):
-            if np <= MAX_CPU:
-                for ewald in EwaldPreset:
-                    configs.append(cls(binary=AmberBinary.PMEMD_MPI, np=np, ewald=ewald))
+            for ntomp in AMBER_NTOMP_OPTIONS:
+                if np * ntomp <= MAX_CPU:
+                    for ewald in EwaldPreset:
+                        configs.append(cls(binary=AmberBinary.PMEMD_MPI, np=np, ntomp=ntomp, ewald=ewald))
 
         return configs
 
@@ -64,8 +66,14 @@ class AmberTrialConfig:
             binary=AmberBinary(data["binary"]),
             np=data["np"],
             ewald=EwaldPreset(data["ewald"]),
+            ntomp=data.get("ntomp", 1),
         )
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a plain dict suitable for JSON storage."""
-        return {"binary": self.binary.value, "np": self.np, "ewald": self.ewald.value}
+        return {
+            "binary": self.binary.value,
+            "np": self.np,
+            "ewald": self.ewald.value,
+            "ntomp": self.ntomp,
+        }
