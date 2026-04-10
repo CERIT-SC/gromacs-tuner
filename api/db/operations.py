@@ -11,33 +11,33 @@ from api.schemas.common import JobStatus, MDEngine
 logger = logging.getLogger(__name__)
 
 
-def create_job(id: str, engine: MDEngine) -> None:
+def create_job(job_id: str, engine: MDEngine) -> None:
     """Create a new job record with PENDING status."""
     with get_session() as session:
-        session.add(Job(id=id, engine=engine, status=JobStatus.PENDING))
+        session.add(Job(id=job_id, engine=engine, status=JobStatus.PENDING))
         session.commit()
 
 
-def update_job_status(id: str, status: JobStatus, error: str | None = None) -> bool:
+def update_job_status(job_id: str, status: JobStatus, error: str | None = None) -> bool:
     """Update a job's status and optional error message."""
     with get_session() as session:
-        if job := session.execute(select(Job).where(Job.id == id)).scalar_one_or_none():
+        if job := session.execute(select(Job).where(Job.id == job_id)).scalar_one_or_none():
             job.status, job.error, job.updated_at = status, error, datetime.now(timezone.utc)
             session.commit()
             return True
         return False
 
 
-def get_job(id: str) -> Job | None:
+def get_job(job_id: str) -> Job | None:
     """Fetch a job by ID, or None if not found."""
     with get_session() as session:
-        return session.execute(select(Job).where(Job.id == id)).scalar_one_or_none()
+        return session.execute(select(Job).where(Job.id == job_id)).scalar_one_or_none()
 
 
-def delete_job(id: str) -> bool:
+def delete_job(job_id: str) -> bool:
     """Delete a job and its cascaded trials; returns True if found and deleted."""
     with get_session() as session:
-        if job := session.execute(select(Job).where(Job.id == id)).scalar_one_or_none():
+        if job := session.execute(select(Job).where(Job.id == job_id)).scalar_one_or_none():
             session.delete(job)
             session.commit()
             return True

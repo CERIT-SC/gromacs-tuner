@@ -409,6 +409,7 @@ components:
           nullable: true
         trials:
           type: array
+          maxItems: 1000
           items:
             $ref: "#/components/schemas/GmxTrial"
 
@@ -426,6 +427,7 @@ components:
           nullable: true
         trials:
           type: array
+          maxItems: 1000
           items:
             $ref: "#/components/schemas/AmberTrial"
 
