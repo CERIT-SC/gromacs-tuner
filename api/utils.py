@@ -95,7 +95,7 @@ async def get_cluster_status() -> ResourcesResponse | None:
             return None
 
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         data = await asyncio.wait_for(loop.run_in_executor(None, _fetch), timeout=RAY_FETCH_TIMEOUT)
     except TimeoutError:
         logger.warning("ray.cluster_resources() timed out after %.1fs", RAY_FETCH_TIMEOUT)

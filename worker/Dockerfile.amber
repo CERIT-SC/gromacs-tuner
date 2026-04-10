@@ -23,6 +23,9 @@ COPY ${PMEMD_TARBALL} /tmp/
 RUN tar -xjf /tmp/${PMEMD_TARBALL} -C /tmp \
     && rm /tmp/${PMEMD_TARBALL} \
     # Only SM7.5 (T4, RTX 2080/Ti), SM8.0 (A100), SM8.6 (A40) — the cluster's GPUs. Default is 7 archs.
+    && grep -q '${SM70FLAGS} ${SM75FLAGS} ${SM80FLAGS} ${SM86FLAGS} ${SM90FLAGS} ${SM100FLAGS} ${SM120FLAGS}' \
+           /tmp/pmemd24_src/cmake/CudaConfig.cmake \
+       || { echo "ERROR: expected GPU arch list not found in CudaConfig.cmake; pmemd24 source layout may have changed" >&2; exit 1; } \
     && sed -i 's/${SM70FLAGS} ${SM75FLAGS} ${SM80FLAGS} ${SM86FLAGS} ${SM90FLAGS} ${SM100FLAGS} ${SM120FLAGS}/${SM75FLAGS} ${SM80FLAGS} ${SM86FLAGS}/' \
        /tmp/pmemd24_src/cmake/CudaConfig.cmake
 
@@ -43,7 +46,7 @@ RUN cmake -S /tmp/pmemd24_src -B /tmp/pmemd24_build \
     && cmake --install /tmp/pmemd24_build
 
 # Stage 2: Minimal runtime image.
-FROM nvidia/cuda:12.8.1-runtime-ubuntu24.04
+FROM nvidia/cuda:12.8.1-runtime-ubuntu22.04
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     openmpi-bin libopenmpi3 openssh-client \
@@ -55,3 +58,7 @@ ENV AMBERHOME=/opt/pmemd24
 ENV PATH="${AMBERHOME}/bin:${PATH}"
 # AMBER bundles FFTW in lib/; expose it to the dynamic linker.
 ENV LD_LIBRARY_PATH="${AMBERHOME}/lib:${LD_LIBRARY_PATH}"
+
+RUN groupadd --system worker && useradd --system --gid worker --no-create-home worker \
+    && chown -R worker:worker /opt/pmemd24
+USER worker
