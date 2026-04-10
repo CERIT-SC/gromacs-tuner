@@ -20,7 +20,7 @@ from api.config import (
     JOBS_DIR,
     TPR_DIR,
 )
-from api.engines.gmx.config import GmxTrialConfig
+from api.engines.gmx.config import GmxTrialConfig, PMEMode
 from api.utils import tail
 
 logger = logging.getLogger(__name__)
@@ -92,9 +92,9 @@ def _build_command(config: GmxTrialConfig, tpr_path: str, nsteps: int = 25_000) 
         "-ntomp",
         str(config.ntomp),
         "-nb",
-        config.nb.value,
+        config.nb,
         "-pme",
-        config.pme.value,
+        config.pme,
         "-s",
         tpr_path,
         "-nsteps",
@@ -103,7 +103,7 @@ def _build_command(config: GmxTrialConfig, tpr_path: str, nsteps: int = 25_000) 
         "-1",  # Disable checkpointing for tuning
     ]
 
-    if config.pme.value == "cpu" and config.np > 1:
+    if config.pme == PMEMode.CPU and config.np > 1:
         cmd += ["-npme", "1"]
 
     return cmd

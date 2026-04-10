@@ -48,7 +48,11 @@ def run_pmemd(
     mdin_source = TPR_DIR / f"{job_id}_md.mdin"
 
     patched_mdin = trial_dir / "mdin"
-    patched_mdin.write_text(patch_mdin_for_benchmark(mdin_source.read_text(), nsteps, config.ewald))
+    try:
+        patched_mdin.write_text(patch_mdin_for_benchmark(mdin_source.read_text(), nsteps, config.ewald))
+    except Exception:
+        logger.exception("Trial %s (job %s): failed to prepare mdin input", trial_id, job_id)
+        return 0.0, 0.0, False
 
     mdout = trial_dir / "mdout"
     mdinfo = trial_dir / "mdinfo"
@@ -218,12 +222,13 @@ def _monitor_process(
         _terminate_process_group(process, signal.SIGKILL)
         process.wait()
 
-    if not early_stopped and last_step > 0:
+    if not early_stopped:
         content = tail(mdinfo, n=20) if mdinfo.exists() else ""
         final_step = _parse_amber_progress(content) or last_step
-        elapsed = time.time() - start_time
-        if elapsed > 0:
-            steps_per_sec = final_step / elapsed
+        if final_step > 0:
+            elapsed = time.time() - start_time
+            if elapsed > 0:
+                steps_per_sec = final_step / elapsed
 
     if not early_stopped and process.returncode != 0:
         logger.error("%s failed with code %d", context, process.returncode)

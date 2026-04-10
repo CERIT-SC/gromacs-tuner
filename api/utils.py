@@ -8,7 +8,7 @@ import shlex
 import shutil
 import time
 from collections import deque
-from concurrent.futures import ThreadPoolExecutor, TimeoutError
+import asyncio
 from pathlib import Path
 from typing import Any, Literal
 
@@ -69,12 +69,11 @@ def sha256_of_file(path: Path | str, chunk_size: int = 8192) -> str:
 
 
 _cluster_status_cache: dict[str, Any] = {"data": None, "time": 0.0}
-_cluster_status_executor = ThreadPoolExecutor(max_workers=1)
 CLUSTER_STATUS_TTL = 10.0
 RAY_FETCH_TIMEOUT = 4.0
 
 
-def get_cluster_status() -> ResourcesResponse | None:
+async def get_cluster_status() -> ResourcesResponse | None:
     """Get current Ray cluster resource usage with caching."""
     now = time.time()
     if now - _cluster_status_cache["time"] < CLUSTER_STATUS_TTL:
@@ -96,7 +95,8 @@ def get_cluster_status() -> ResourcesResponse | None:
             return None
 
     try:
-        data = _cluster_status_executor.submit(_fetch).result(timeout=RAY_FETCH_TIMEOUT)
+        loop = asyncio.get_event_loop()
+        data = await asyncio.wait_for(loop.run_in_executor(None, _fetch), timeout=RAY_FETCH_TIMEOUT)
     except TimeoutError:
         logger.warning("ray.cluster_resources() timed out after %.1fs", RAY_FETCH_TIMEOUT)
         _cluster_status_cache["time"] = time.time()
@@ -141,9 +141,13 @@ def tail(file: Path | str, n: int = 10) -> str:
 
 def read_trial_log(job_id: str, trial_id: str, stream: Literal["stdout", "stderr"]) -> str:
     """Read a trial's stdout or stderr log file. Returns empty string if not yet written."""
-    path = JOBS_DIR / job_id / trial_id / f"{stream}.log"
+    base = JOBS_DIR.resolve()
+    candidate = (JOBS_DIR / job_id / trial_id / f"{stream}.log").resolve()
+    if not str(candidate).startswith(str(base) + os.sep):
+        logger.warning("Path traversal attempt blocked: %s", candidate)
+        return ""
     try:
-        return path.read_text(encoding="utf-8", errors="replace")
+        return candidate.read_text(encoding="utf-8", errors="replace")
     except FileNotFoundError:
         return ""
 
@@ -174,7 +178,9 @@ def sanitize_extra_args(extra_args: str, forbidden_flags: frozenset[str]) -> str
     except ValueError as e:
         raise ValueError(f"Invalid extra_args: {e}") from e
 
-    if set(tokens) & forbidden_flags:
+    # Check both plain tokens and the flag part of "flag=value" syntax
+    flag_names = {token.split("=")[0] for token in tokens}
+    if flag_names & forbidden_flags:
         raise ValueError(f"extra_args must not override critical flags: {', '.join(sorted(forbidden_flags))}")
 
     return shlex.join(tokens)

@@ -20,7 +20,7 @@ def test_valid_config_cpu_only() -> None:
 
 
 def test_valid_config_gpu() -> None:
-    cfg = GmxTrialConfig(np=1, ntomp=4, nb=NBMode.GPU, pme=NBMode.GPU)
+    cfg = GmxTrialConfig(np=1, ntomp=4, nb=NBMode.GPU, pme=PMEMode.GPU)
     assert cfg.is_valid
     assert cfg.num_gpus == 1
 

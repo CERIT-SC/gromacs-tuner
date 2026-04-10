@@ -56,6 +56,12 @@ paths:
           description: Unauthorized.
         "413":
           description: File too large.
+        "500":
+          description: Submission failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /tuning-jobs/gmx/{job_id}/status:
     get:
@@ -188,6 +194,12 @@ paths:
           description: Unauthorized.
         "413":
           description: File too large.
+        "500":
+          description: Submission failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /tuning-jobs/amber/{job_id}/status:
     get:
@@ -441,3 +453,11 @@ components:
         status:
           type: string
           example: ok
+
+    ErrorResponse:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          type: string
+          description: Human-readable error description.

@@ -23,9 +23,8 @@ class TestCreateGmxTuningJob:
             files={"file": ("md.tpr", _fake_tpr(), "application/octet-stream")},
             data={"nsteps": "1000"},
         )
-        assert response.status_code == 200
-        assert response.json()["success"] is True
-        assert "id" in response.json()["data"]
+        assert response.status_code == 201
+        assert "id" in response.json()
 
     def test_rejects_wrong_extension(self) -> None:
         response = client.post(
@@ -57,7 +56,7 @@ class TestGetGmxStatus:
 
         response = client.get("/api/tuning-jobs/gmx/test-id/status", auth=AUTH)
         assert response.status_code == 200
-        assert response.json()["data"]["status"] == "RUNNING"
+        assert response.json()["status"] == "RUNNING"
 
     @patch("api.routers.gmx.get_job")
     def test_returns_404_for_missing_job(self, mock_get_job) -> None:
@@ -83,5 +82,4 @@ class TestDeleteGmxTuningJob:
         mock_get_job.return_value = MagicMock()
         mock_cancel.return_value = True
         response = client.delete("/api/tuning-jobs/gmx/test-id", auth=AUTH)
-        assert response.status_code == 200
-        assert response.json()["success"] is True
+        assert response.status_code == 204

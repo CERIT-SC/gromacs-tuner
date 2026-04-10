@@ -3,7 +3,7 @@
 import logging
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import asc, select
 
 from api.db.models import Job, Trial, get_session
 from api.schemas.common import JobStatus, MDEngine
@@ -78,4 +78,4 @@ def get_trial(trial_id: int, job_id: str) -> Trial | None:
 def get_trials_by_job_id(job_id: str) -> list[Trial]:
     """Get all trials for a job as raw Trial ORM objects."""
     with get_session() as session:
-        return list(session.execute(select(Trial).where(Trial.job_id == job_id)).scalars().all())
+        return list(session.execute(select(Trial).where(Trial.job_id == job_id).order_by(asc(Trial.id))).scalars().all())

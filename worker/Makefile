@@ -16,8 +16,12 @@ help: ## Show help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
-build-amber: ## Build AMBER base image (place pmemd24*.tar.bz2 in worker/)
-	docker build -t $(AMBER_IMAGE) -f Dockerfile.amber .
+PMEMD_TARBALL ?= pmemd24.tar.bz2
+
+build-amber: ## Build AMBER base image (place pmemd tarball in worker/, set PMEMD_TARBALL=filename)
+	docker build -t $(AMBER_IMAGE) -f Dockerfile.amber \
+		--build-arg PMEMD_TARBALL=$(PMEMD_TARBALL) \
+		.
 
 push-amber: build-amber ## Build and push AMBER base image to private registry
 	@[ -n "$(REGISTRY)" ] || { echo "Error: REGISTRY not set" >&2; exit 1; }

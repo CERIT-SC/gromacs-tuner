@@ -18,9 +18,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openmpi-bin libopenmpi-dev openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
-COPY pmemd24*.tar.bz2 /tmp/
-RUN tar -xjf /tmp/pmemd24*.tar.bz2 -C /tmp \
-    && rm /tmp/pmemd24*.tar.bz2 \
+ARG PMEMD_TARBALL=pmemd24.tar.bz2
+COPY ${PMEMD_TARBALL} /tmp/
+RUN tar -xjf /tmp/${PMEMD_TARBALL} -C /tmp \
+    && rm /tmp/${PMEMD_TARBALL} \
     # Only SM7.5 (T4, RTX 2080/Ti), SM8.0 (A100), SM8.6 (A40) — the cluster's GPUs. Default is 7 archs.
     && sed -i 's/${SM70FLAGS} ${SM75FLAGS} ${SM80FLAGS} ${SM86FLAGS} ${SM90FLAGS} ${SM100FLAGS} ${SM120FLAGS}/${SM75FLAGS} ${SM80FLAGS} ${SM86FLAGS}/' \
        /tmp/pmemd24_src/cmake/CudaConfig.cmake
