@@ -5,8 +5,9 @@ IMAGE_NAME ?= gromacs-tuner-api
 REGISTRY ?= cerit.io/xkrasa
 TAG ?= latest
 IMAGE := $(REGISTRY)/$(IMAGE_NAME):$(TAG)
-DOCKERFILE ?= Dockerfile
-CONTEXT ?= ..
+MAKEFILE_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+DOCKERFILE ?= $(abspath $(MAKEFILE_DIR)/Dockerfile)
+CONTEXT ?= $(abspath $(MAKEFILE_DIR)/..)
 
 .PHONY: help build push build-and-push clean docker-login tag
 

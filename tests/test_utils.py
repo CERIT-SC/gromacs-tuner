@@ -47,3 +47,11 @@ class TestSanitizeAmberExtraArgs:
     def test_forbidden_amber_flag_O_raises(self) -> None:
         with pytest.raises(ValueError, match="critical"):
             sanitize_extra_args("-O", AMBER_FORBIDDEN_FLAGS)
+
+    def test_multiple_valid_args_pass_through(self) -> None:
+        result = sanitize_extra_args("-AllowSmallBox -verbose", AMBER_FORBIDDEN_FLAGS)
+        assert result == "-AllowSmallBox -verbose"
+
+    def test_equals_syntax_forbidden_flag_raises(self) -> None:
+        with pytest.raises(ValueError, match="critical"):
+            sanitize_extra_args("-i=custom.mdin", AMBER_FORBIDDEN_FLAGS)

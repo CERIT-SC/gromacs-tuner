@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 async def get_trial_stdout(
-    job_id: str, trial_id: str, _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)]
+    job_id: str, trial_id: int, _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)]
 ) -> str:
     """
     Return stdout log for a trial. Empty string if not yet written.
@@ -27,14 +27,14 @@ async def get_trial_stdout(
     job = await run_in_threadpool(get_job, job_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
-    trial = await run_in_threadpool(get_trial, int(trial_id), job_id)
+    trial = await run_in_threadpool(get_trial, trial_id, job_id)
     if not trial:
         raise HTTPException(status_code=404, detail=f"Trial '{trial_id}' not found")
-    return await run_in_threadpool(read_trial_log, job_id, trial_id, "stdout")
+    return await run_in_threadpool(read_trial_log, job_id, str(trial_id), "stdout")
 
 
 async def get_trial_stderr(
-    job_id: str, trial_id: str, _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)]
+    job_id: str, trial_id: int, _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)]
 ) -> str:
     """
     Return stderr log for a trial. Empty string if not yet written.
@@ -45,10 +45,10 @@ async def get_trial_stderr(
     job = await run_in_threadpool(get_job, job_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
-    trial = await run_in_threadpool(get_trial, int(trial_id), job_id)
+    trial = await run_in_threadpool(get_trial, trial_id, job_id)
     if not trial:
         raise HTTPException(status_code=404, detail=f"Trial '{trial_id}' not found")
-    return await run_in_threadpool(read_trial_log, job_id, trial_id, "stderr")
+    return await run_in_threadpool(read_trial_log, job_id, str(trial_id), "stderr")
 
 
 async def delete_tuning_job(job_id: str, _: Annotated[HTTPBasicCredentials, Depends(verify_credentials)]) -> Response:

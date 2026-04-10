@@ -5,8 +5,6 @@ import uvicorn
 from alembic import command
 from alembic.config import Config
 
-from api.main import app
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -22,6 +20,8 @@ def main() -> None:
     except Exception:
         logger.exception("Database migration failed.")
         sys.exit(1)
+
+    from api.main import app  # noqa: PLC0415 — intentional: import after migrations complete
 
     try:
         uvicorn.run(app, host="0.0.0.0", port=8000)

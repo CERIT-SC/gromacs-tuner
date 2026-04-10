@@ -205,13 +205,16 @@ def _process_trial_results(
 
 
 def _run_tuning_async(job_id: str, engine: Engine, extra_args: str = "", nsteps: int = 25_000) -> None:
+    pending_trial_ids: list[int] = []
     try:
         # Create trial records before connecting to Ray so GET returns them immediately.
         all_configs = engine.generate_configs()
         trial_configs = [(create_trial_result(job_id, cfg.params, JobStatus.PENDING, None), cfg) for cfg in all_configs]
+        pending_trial_ids = [tid for tid, _ in trial_configs]
         trial_configs = _order_trial_configs(trial_configs)
 
         _ensure_ray_initialized()
+        pending_trial_ids = []  # Ray is up; trials will be managed by the run loop from here
         update_job_status(job_id, JobStatus.RUNNING)
 
         best_steps_per_sec = 0.0
@@ -233,10 +236,15 @@ def _run_tuning_async(job_id: str, engine: Engine, extra_args: str = "", nsteps:
             future_to_trial = _submit_trials(job_id, extra_args, batch, engine, nsteps, best_steps_per_sec)
             best_steps_per_sec = _process_trial_results(job_id, future_to_trial, best_steps_per_sec)
 
-        logger.info("All trials completed for job %s (best: %.1f steps/s)", job_id, best_steps_per_sec)
-        update_job_status(job_id, JobStatus.TERMINATED)
+        if _job_context.is_cancelled(job_id):
+            logger.info("Job %s finished after cancellation; status already set", job_id)
+        else:
+            logger.info("All trials completed for job %s (best: %.1f steps/s)", job_id, best_steps_per_sec)
+            update_job_status(job_id, JobStatus.TERMINATED)
     except Exception as e:
         logger.exception("Tuning job %s failed", job_id)
+        for trial_id in pending_trial_ids:
+            update_trial_result(trial_id, JobStatus.ERROR, None)
         update_job_status(job_id, JobStatus.ERROR, str(e))
     finally:
         _job_context.remove_job(job_id)

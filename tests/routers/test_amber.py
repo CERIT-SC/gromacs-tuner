@@ -35,8 +35,8 @@ class TestCreateAmberTuningJob:
             },
             data={"nsteps": "5000"},
         )
-        assert response.status_code == 200
-        assert response.json()["success"] is True
+        assert response.status_code == 201
+        assert "id" in response.json()
 
     def test_rejects_wrong_prmtop_extension(self) -> None:
         response = client.post(

@@ -6,7 +6,6 @@ import yaml
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasicCredentials
-from starlette.concurrency import run_in_threadpool
 
 from api.auth import verify_credentials
 from api.routers.amber import router as amber_router
@@ -16,7 +15,7 @@ from api.utils import get_cluster_status
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="MD Tuner API")
+app = FastAPI(title="MD Tuner API", openapi_url=None)
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"]
 )
@@ -35,7 +34,7 @@ async def get_cluster_resources_endpoint(
     Raises:
         HTTPException: 503 if Ray cluster resources are unavailable.
     """
-    resources = await run_in_threadpool(get_cluster_status)
+    resources = await get_cluster_status()
     if resources is None:
         raise HTTPException(status_code=503, detail="Cluster resources unavailable - Ray may not be initialized")
     return resources
