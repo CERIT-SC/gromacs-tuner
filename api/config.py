@@ -17,7 +17,8 @@ NTOMP_OPTIONS = [1, 2, 4]
 NP_OPTIONS = [1, 2, 4]
 NB_OPTIONS = ["cpu", "gpu"]
 PME_OPTIONS = ["cpu", "gpu"]
-AMBER_NP_OPTIONS = [1, 2, 4, 8]
+# pmemd.MPI requires >= 2 ranks; np=1 would abort immediately
+AMBER_NP_OPTIONS = [2, 4, 8]
 AMBER_NTOMP_OPTIONS = [1, 2, 4]
 
 MAX_UPLOAD_SIZE = 10 * 1024**3  # 10 GB
