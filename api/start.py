@@ -2,8 +2,8 @@ import logging
 import sys
 
 import uvicorn
-
-from api.main import app
+from alembic import command
+from alembic.config import Config
 
 logging.basicConfig(
     level=logging.INFO,
@@ -15,6 +15,14 @@ logger = logging.getLogger(__name__)
 
 def main() -> None:
     """Start the FastAPI application."""
+    try:
+        command.upgrade(Config("alembic.ini"), "head")
+    except Exception:
+        logger.exception("Database migration failed.")
+        sys.exit(1)
+
+    from api.main import app  # noqa: PLC0415 — intentional: import after migrations complete
+
     try:
         uvicorn.run(app, host="0.0.0.0", port=8000)
     except Exception:

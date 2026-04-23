@@ -1,0 +1,64 @@
+# Builds the private AMBER image from the licensed pmemd24 source tarball.
+# Place pmemd24*.tar.bz2 in the worker/ build context before building.
+# Download from https://ambermd.org/GetAmber.php (requires a valid AMBER 24 license).
+# AmberTools is NOT required — pmemd24 builds standalone with -DPMEMD_ONLY=TRUE.
+# WARNING: compilation takes 20-60 minutes.
+
+# Stage 1: Compile pmemd with CUDA and MPI support.
+# Needs the full CUDA toolkit (nvcc) to compile GPU kernels.
+FROM nvidia/cuda:12.8.1-devel-ubuntu22.04 AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tcsh make cmake bzip2 \
+    gcc g++ gfortran \
+    flex bison patch bc wget \
+    xorg-dev \
+    zlib1g-dev libbz2-dev \
+    python3 \
+    openmpi-bin libopenmpi-dev openssh-client \
+    && rm -rf /var/lib/apt/lists/*
+
+ARG PMEMD_TARBALL=pmemd24.tar.bz2
+COPY ${PMEMD_TARBALL} /tmp/
+RUN tar -xjf /tmp/${PMEMD_TARBALL} -C /tmp \
+    && rm /tmp/${PMEMD_TARBALL} \
+    # Only SM7.5 (T4, RTX 2080/Ti), SM8.0 (A100), SM8.6 (A40) — the cluster's GPUs. Default is 7 archs.
+    && grep -q '${SM70FLAGS} ${SM75FLAGS} ${SM80FLAGS} ${SM86FLAGS} ${SM90FLAGS} ${SM100FLAGS} ${SM120FLAGS}' \
+           /tmp/pmemd24_src/cmake/CudaConfig.cmake \
+       || { echo "ERROR: expected GPU arch list not found in CudaConfig.cmake; pmemd24 source layout may have changed" >&2; exit 1; } \
+    && sed -i 's/${SM70FLAGS} ${SM75FLAGS} ${SM80FLAGS} ${SM86FLAGS} ${SM90FLAGS} ${SM100FLAGS} ${SM120FLAGS}/${SM75FLAGS} ${SM80FLAGS} ${SM86FLAGS}/' \
+       /tmp/pmemd24_src/cmake/CudaConfig.cmake
+
+RUN cmake -S /tmp/pmemd24_src -B /tmp/pmemd24_build \
+        -DCMAKE_INSTALL_PREFIX=/opt/pmemd24 \
+        -DCOMPILER=GNU \
+        -DCUDA=TRUE \
+        -DMPI=TRUE \
+        -DPMEMD_ONLY=TRUE \
+        -DBUILD_PERL=FALSE \
+        -DBUILD_GUI=FALSE \
+        -DINSTALL_TESTS=FALSE \
+        -DDOWNLOAD_MINICONDA=FALSE \
+        -DBUILD_PYTHON=FALSE \
+        -DCHECK_UPDATES=FALSE \
+    # ~4 GB RAM per parallel job; raise only if you have headroom
+    && cmake --build /tmp/pmemd24_build --parallel 4 \
+    && cmake --install /tmp/pmemd24_build
+
+# Stage 2: Minimal runtime image.
+FROM nvidia/cuda:12.8.1-runtime-ubuntu22.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openmpi-bin libopenmpi3 openssh-client \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /opt/pmemd24 /opt/pmemd24
+ENV AMBERHOME=/opt/pmemd24
+ENV PATH="${AMBERHOME}/bin:${PATH}"
+# AMBER bundles FFTW in lib/; expose it to the dynamic linker.
+ENV LD_LIBRARY_PATH="${AMBERHOME}/lib:${LD_LIBRARY_PATH}"
+
+RUN groupadd --system worker && useradd --system --gid worker --no-create-home worker \
+    && chown -R worker:worker /opt/pmemd24
+USER worker

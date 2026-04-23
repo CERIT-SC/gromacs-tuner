@@ -1,8 +1,8 @@
 openapi: 3.0.0
 info:
-  title: "GROMACS Tuner API"
-  version: "1.2"
-  description: "API for submitting and monitoring GROMACS tuning runs."
+  title: "MD Tuner API"
+  version: "2.0"
+  description: "API for submitting and monitoring GROMACS and AMBER hyperparameter tuning runs."
 
 servers:
   - url: https://gromacs-tuner.dyn.cloud.e-infra.cz/api
@@ -11,10 +11,10 @@ security:
   - basicAuth: []
 
 paths:
-  /tuner_runs:
+  /tuning-jobs/gmx:
     post:
-      summary: Submit a `.tpr` file for tuning.
-      description: Uploads a `.tpr` file and starts a tuning process.
+      summary: Submit a GROMACS tuning job.
+      description: Uploads a `.tpr` file and starts a GMX mdrun parameter search.
       security:
         - basicAuth: []
       requestBody:
@@ -29,66 +29,270 @@ paths:
                 file:
                   type: string
                   format: binary
-                  description: The `.tpr` file to be tuned.
+                  description: The `.tpr` topology/run file.
                 nsteps:
                   type: integer
                   default: 25000
                   minimum: 1
-                  description: Number of steps to run in GROMACS mdrun (must be at least 1).
+                  description: Number of mdrun steps per trial.
                 extra_args:
                   type: string
                   default: ""
                   example: "-plumed plumed.dat"
                   description: |
-                    Additional GROMACS mdrun arguments.
+                    Additional gmx mdrun arguments.
                     Shell metacharacters (; & | ` $ ( ) < >) are forbidden.
                     Critical flags (-deffnm, -s, -nsteps, -ntomp, -np, -nb, -pme) cannot be overridden.
       responses:
-        "200":
-          description: Tuning run successfully started.
+        "201":
+          description: Tuning job started.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SuccessResponseWithRunID"
-
-  /tuner_runs/{job_id}:
-    delete:
-      summary: Delete a tuning run.
-      security:
-        - basicAuth: []
-      parameters:
-        - name: job_id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Tuning run successfully deleted.
+                $ref: "#/components/schemas/JobCreatedResponse"
+        "400":
+          description: Invalid file or arguments.
+        "401":
+          description: Unauthorized.
+        "413":
+          description: File too large.
+        "500":
+          description: Submission failed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SuccessResponseWithDeleteInfo"
+                $ref: "#/components/schemas/ErrorResponse"
 
-  /tuner_runs/{job_id}/status:
+  /tuning-jobs/gmx/{job_id}/status:
     get:
-      summary: Retrieve the status of a tuning run.
+      summary: Get GMX tuning job status.
       security:
         - basicAuth: []
       parameters:
-        - name: job_id
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Unique identifier of the tuning run.
+        - $ref: "#/components/parameters/JobId"
       responses:
         "200":
-          description: Current status of the tuning run.
+          description: Current job status and trial results.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SuccessResponseWithStatus"
+                $ref: "#/components/schemas/GmxStatusResponse"
+        "401":
+          description: Unauthorized.
+        "404":
+          description: Job not found.
+        "503":
+          description: Database busy.
+
+  /tuning-jobs/gmx/{job_id}:
+    delete:
+      summary: Delete a tuning job.
+      security:
+        - basicAuth: []
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "204":
+          description: Job deleted.
+        "401":
+          description: Unauthorized.
+        "404":
+          description: Job not found.
+
+  /tuning-jobs/gmx/{job_id}/trials/{trial_id}/stdout:
+    get:
+      summary: Get trial stdout log.
+      security:
+        - basicAuth: []
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+        - $ref: "#/components/parameters/TrialId"
+      responses:
+        "200":
+          description: Trial stdout content (empty if not yet written).
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          description: Unauthorized.
+        "404":
+          description: Job or trial not found.
+
+  /tuning-jobs/gmx/{job_id}/trials/{trial_id}/stderr:
+    get:
+      summary: Get trial stderr log.
+      security:
+        - basicAuth: []
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+        - $ref: "#/components/parameters/TrialId"
+      responses:
+        "200":
+          description: Trial stderr content (empty if not yet written).
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          description: Unauthorized.
+        "404":
+          description: Job or trial not found.
+
+  /tuning-jobs/amber:
+    post:
+      summary: Submit an AMBER tuning job.
+      description: Uploads prmtop + inpcrd + mdin files and starts a pmemd parameter search.
+      security:
+        - basicAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - prmtop
+                - inpcrd
+                - mdin
+              properties:
+                prmtop:
+                  type: string
+                  format: binary
+                  description: AMBER parameter/topology file (`.prmtop` or `.parm7`).
+                inpcrd:
+                  type: string
+                  format: binary
+                  description: AMBER coordinate/restart file (`.inpcrd`, `.rst7`, or `.nc`).
+                mdin:
+                  type: string
+                  format: binary
+                  description: AMBER input file (`.mdin`). Physics parameters are preserved; benchmark-only params are patched.
+                nsteps:
+                  type: integer
+                  default: 25000
+                  minimum: 1
+                  description: Number of pmemd steps per trial.
+                extra_args:
+                  type: string
+                  default: ""
+                  example: "-AllowSmallBox"
+                  description: |
+                    Additional pmemd arguments.
+                    Shell metacharacters (; & | ` $ ( ) < >) are forbidden.
+                    Critical flags (-i, -p, -c, -o, -inf, -r, -x, -O) cannot be overridden.
+      responses:
+        "201":
+          description: Tuning job started.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobCreatedResponse"
+        "400":
+          description: Invalid files or arguments.
+        "401":
+          description: Unauthorized.
+        "413":
+          description: File too large.
+        "500":
+          description: Submission failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /tuning-jobs/amber/{job_id}/status:
+    get:
+      summary: Get AMBER tuning job status.
+      security:
+        - basicAuth: []
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200":
+          description: Current job status and trial results.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AmberStatusResponse"
+        "401":
+          description: Unauthorized.
+        "404":
+          description: Job not found.
+        "503":
+          description: Database busy.
+
+  /tuning-jobs/amber/{job_id}:
+    delete:
+      summary: Delete a tuning job.
+      security:
+        - basicAuth: []
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "204":
+          description: Job deleted.
+        "401":
+          description: Unauthorized.
+        "404":
+          description: Job not found.
+
+  /tuning-jobs/amber/{job_id}/trials/{trial_id}/stdout:
+    get:
+      summary: Get trial stdout log.
+      security:
+        - basicAuth: []
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+        - $ref: "#/components/parameters/TrialId"
+      responses:
+        "200":
+          description: Trial stdout content (empty if not yet written).
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          description: Unauthorized.
+        "404":
+          description: Job or trial not found.
+
+  /tuning-jobs/amber/{job_id}/trials/{trial_id}/stderr:
+    get:
+      summary: Get trial stderr log.
+      security:
+        - basicAuth: []
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+        - $ref: "#/components/parameters/TrialId"
+      responses:
+        "200":
+          description: Trial stderr content (empty if not yet written).
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          description: Unauthorized.
+        "404":
+          description: Job or trial not found.
+
+  /resources:
+    get:
+      summary: Get Ray cluster resource utilization.
+      security:
+        - basicAuth: []
+      responses:
+        "200":
+          description: Cluster resources retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourcesResponse"
+        "401":
+          description: Unauthorized.
+        "503":
+          description: Ray cluster not initialized.
 
   /health:
     get:
@@ -99,21 +303,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SuccessResponseWithHealth"
-
-  /resources:
-    get:
-      summary: Get cluster resources.
-      description: Get current Ray cluster resource utilization.
-      security:
-        - basicAuth: []
-      responses:
-        "200":
-          description: Cluster resources retrieved successfully.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SuccessResponseWithResources"
+                $ref: "#/components/schemas/HealthResponse"
 
 components:
   securitySchemes:
@@ -121,129 +311,155 @@ components:
       type: http
       scheme: basic
 
+  parameters:
+    JobId:
+      name: job_id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Unique job identifier (UUID).
+    TrialId:
+      name: trial_id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Trial identifier (integer ID as string).
+
   schemas:
-    SuccessResponseWithRunID:
+    JobCreatedResponse:
       type: object
+      required: [id, status]
       properties:
-        success:
-          type: boolean
-        data:
-          type: object
-          properties:
-            id:
-              type: string
-            status:
-              type: string
-        message:
+        id:
           type: string
-        error:
-          type: object
-          nullable: true
+          description: UUID of the created job.
+        status:
+          type: string
+          example: PENDING
 
-    SuccessResponseWithStatus:
+    GmxTrial:
       type: object
+      required: [id, status, np, ntomp, nb, pme]
       properties:
-        success:
-          type: boolean
-        data:
-          type: object
-          properties:
-            id:
-              type: string
-            status:
-              type: string
-            trials:
-              type: array
-              items:
-                type: object
-                properties:
-                  id:
-                    type: string
-                  status:
-                    type: string
-                  np:
-                    type: integer
-                  ntomp:
-                    type: integer
-                  nb:
-                    type: string
-                  pme:
-                    type: string
-                  performance:
-                    type: number
-                    nullable: true
-            error:
-              type: string
-              nullable: true
-        message:
+        id:
           type: string
-        error:
-          type: object
+        status:
+          type: string
+          enum: [UNKNOWN, PENDING, RUNNING, TERMINATED, ERROR]
+        np:
+          type: integer
+          description: Number of MPI ranks.
+        ntomp:
+          type: integer
+          description: OpenMP threads per rank (0 = auto).
+        nb:
+          type: string
+          enum: [auto, cpu, gpu]
+          description: Non-bonded calculation target.
+        pme:
+          type: string
+          enum: [auto, cpu, gpu]
+          description: PME calculation target.
+        performance:
+          type: number
           nullable: true
+          description: Performance in ns/day; null if trial is pending/running/early-stopped.
 
-    SuccessResponseWithHealth:
+    AmberTrial:
       type: object
+      required: [id, status, binary, np, ntomp, ewald]
       properties:
-        success:
-          type: boolean
-        data:
-          type: object
-          properties:
-            status:
-              type: string
-        message:
+        id:
           type: string
-        error:
-          type: object
+        status:
+          type: string
+          enum: [UNKNOWN, PENDING, RUNNING, TERMINATED, ERROR]
+        binary:
+          type: string
+          enum: [pmemd.cuda, pmemd.MPI]
+          description: pmemd binary used for this trial.
+        np:
+          type: integer
+          description: Number of MPI ranks (only relevant for pmemd.MPI).
+        ntomp:
+          type: integer
+          description: OpenMP threads per MPI rank.
+        ewald:
+          type: string
+          enum: [default, optimized]
+          description: Ewald summation preset (optimized applies netfrc=0, skin_permit=0.75).
+        performance:
+          type: number
           nullable: true
+          description: Performance in ns/day; null if trial is pending/running/early-stopped.
 
-    SuccessResponseWithDeleteInfo:
+    GmxStatusResponse:
       type: object
+      required: [id, status, trials]
       properties:
-        success:
-          type: boolean
-        data:
-          type: object
-          properties:
-            id:
-              type: string
-            cancelled:
-              type: boolean
-        message:
+        id:
           type: string
+        status:
+          type: string
+          enum: [UNKNOWN, PENDING, RUNNING, TERMINATED, ERROR]
         error:
-          type: object
+          type: string
           nullable: true
+        trials:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: "#/components/schemas/GmxTrial"
 
-    SuccessResponseWithResources:
+    AmberStatusResponse:
       type: object
+      required: [id, status, trials]
       properties:
-        success:
-          type: boolean
-        data:
-          type: object
-          description: Cluster resources information. Returns empty object when unavailable.
-          properties:
-            total_cpus:
-              type: integer
-              description: Total CPU cores available in the Ray cluster.
-            total_gpus:
-              type: integer
-              description: Total GPUs available in the Ray cluster.
-            used_cpus:
-              type: integer
-              description: CPU cores currently in use across the cluster.
-            used_gpus:
-              type: integer
-              description: GPUs currently in use across the cluster.
-            available_cpus:
-              type: integer
-              description: CPU cores available for new tasks.
-            available_gpus:
-              type: integer
-              description: GPUs available for new tasks.
-        message:
+        id:
           type: string
+        status:
+          type: string
+          enum: [UNKNOWN, PENDING, RUNNING, TERMINATED, ERROR]
         error:
-          type: object
+          type: string
           nullable: true
+        trials:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: "#/components/schemas/AmberTrial"
+
+    ResourcesResponse:
+      type: object
+      required: [total_cpus, total_gpus, available_cpus, available_gpus, used_cpus, used_gpus]
+      properties:
+        total_cpus:
+          type: integer
+        total_gpus:
+          type: integer
+        available_cpus:
+          type: integer
+        available_gpus:
+          type: integer
+        used_cpus:
+          type: integer
+        used_gpus:
+          type: integer
+
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          example: ok
+
+    ErrorResponse:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          type: string
+          description: Human-readable error description.

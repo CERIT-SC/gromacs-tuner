@@ -20,14 +20,14 @@ from api.config import (
     JOBS_DIR,
     TPR_DIR,
 )
-from api.gromacs.config import TrialConfig
+from api.engines.gmx.config import GmxTrialConfig, PMEMode
 from api.utils import tail
 
 logger = logging.getLogger(__name__)
 
 
 def run_mdrun(
-    config: TrialConfig,
+    config: GmxTrialConfig,
     trial_id: str,
     job_id: str,
     extra_args: str = "",
@@ -80,7 +80,7 @@ def run_mdrun(
     return performance, final_steps_per_sec, False
 
 
-def _build_command(config: TrialConfig, tpr_path: str, nsteps: int = 25_000) -> list[str]:
+def _build_command(config: GmxTrialConfig, tpr_path: str, nsteps: int = 25_000) -> list[str]:
     """Build the mpirun + gmx mdrun command."""
     cmd = [
         "mpirun",
@@ -103,7 +103,7 @@ def _build_command(config: TrialConfig, tpr_path: str, nsteps: int = 25_000) -> 
         "-1",  # Disable checkpointing for tuning
     ]
 
-    if config.pme == "cpu" and config.np > 1:
+    if config.pme == PMEMode.CPU and config.np > 1:
         cmd += ["-npme", "1"]
 
     return cmd
@@ -160,7 +160,7 @@ def _run_command_with_monitoring(
         Tuple of (early_stopped, final_steps_per_sec) on success, None on failure.
     """
     try:
-        with stdout_log.open("w") as out, stderr_log.open("w") as err:
+        with stdout_log.open("w", encoding="utf-8") as out, stderr_log.open("w", encoding="utf-8") as err:
             process = subprocess.Popen(
                 cmd,
                 stdout=out,

@@ -1,14 +1,16 @@
-FROM python:3.12-slim
+FROM python:3.13-slim
 
 RUN groupadd -g 1000 appuser && \
     useradd -u 1000 -g appuser -s /bin/bash -m appuser
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY api/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt && rm requirements.txt
 
-COPY . api/
+COPY api/ api/
+COPY migrations/ migrations/
+COPY alembic.ini .
 
 ENV PYTHONPATH=/app \
     PYTHONUNBUFFERED=1
