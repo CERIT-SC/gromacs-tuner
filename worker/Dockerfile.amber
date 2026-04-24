@@ -51,6 +51,7 @@ FROM nvidia/cuda:12.8.1-runtime-ubuntu22.04
 RUN apt-get update && apt-get install -y --no-install-recommends \
     openmpi-bin libopenmpi3 openssh-client \
     libgomp1 \
+    libgfortran5 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /opt/pmemd24 /opt/pmemd24
