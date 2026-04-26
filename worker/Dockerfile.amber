@@ -1,7 +1,6 @@
-# Builds the private AMBER image from the licensed pmemd24 source tarball.
-# Place pmemd24*.tar.bz2 in the worker/ build context before building.
+# Builds the private AMBER image from the licensed pmemd24 and AmberTools25 source tarballs.
+# Place pmemd24*.tar.bz2 and ambertools25*.tar.bz2 in the worker/ build context before building.
 # Download from https://ambermd.org/GetAmber.php (requires a valid AMBER 24 license).
-# AmberTools is NOT required — pmemd24 builds standalone with -DPMEMD_ONLY=TRUE.
 # WARNING: compilation takes 20-60 minutes.
 
 # Stage 1: Compile pmemd with CUDA and MPI support.
@@ -45,6 +44,30 @@ RUN cmake -S /tmp/pmemd24_src -B /tmp/pmemd24_build \
     && cmake --build /tmp/pmemd24_build --parallel 4 \
     && cmake --install /tmp/pmemd24_build
 
+ARG AMBERTOOLS_TARBALL=ambertools25.tar.bz2
+COPY ${AMBERTOOLS_TARBALL} /tmp/
+RUN tar -xjf /tmp/${AMBERTOOLS_TARBALL} -C /tmp \
+    && rm /tmp/${AMBERTOOLS_TARBALL} \
+    && grep -q '${SM70FLAGS} ${SM75FLAGS} ${SM80FLAGS} ${SM86FLAGS} ${SM90FLAGS} ${SM100FLAGS} ${SM120FLAGS}' \
+           /tmp/ambertools25_src/cmake/CudaConfig.cmake \
+       || { echo "ERROR: expected GPU arch list not found in CudaConfig.cmake; ambertools25 source layout may have changed" >&2; exit 1; } \
+    && sed -i 's/${SM70FLAGS} ${SM75FLAGS} ${SM80FLAGS} ${SM86FLAGS} ${SM90FLAGS} ${SM100FLAGS} ${SM120FLAGS}/${SM75FLAGS} ${SM80FLAGS} ${SM86FLAGS}/' \
+       /tmp/ambertools25_src/cmake/CudaConfig.cmake
+
+RUN cmake -S /tmp/ambertools25_src -B /tmp/ambertools25_build \
+        -DCMAKE_INSTALL_PREFIX=/opt/ambertools25 \
+        -DCOMPILER=GNU \
+        -DCUDA=TRUE \
+        -DMPI=TRUE \
+        -DBUILD_PERL=FALSE \
+        -DBUILD_GUI=FALSE \
+        -DINSTALL_TESTS=FALSE \
+        -DDOWNLOAD_MINICONDA=FALSE \
+        -DBUILD_PYTHON=FALSE \
+        -DCHECK_UPDATES=FALSE \
+    && cmake --build /tmp/ambertools25_build --parallel 4 \
+    && cmake --install /tmp/ambertools25_build
+
 # Stage 2: Minimal runtime image.
 FROM nvidia/cuda:12.8.1-runtime-ubuntu22.04
 
@@ -55,11 +78,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /opt/pmemd24 /opt/pmemd24
-ENV AMBERHOME=/opt/pmemd24
-ENV PATH="${AMBERHOME}/bin:${PATH}"
-# AMBER bundles FFTW in lib/; expose it to the dynamic linker.
-ENV LD_LIBRARY_PATH="${AMBERHOME}/lib:${LD_LIBRARY_PATH}"
+COPY --from=builder /opt/ambertools25 /opt/ambertools25
+ENV AMBERHOME=/opt/ambertools25
+ENV PATH="${AMBERHOME}/bin:/opt/pmemd24/bin:${PATH}"
+ENV LD_LIBRARY_PATH="${AMBERHOME}/lib:/opt/pmemd24/lib:${LD_LIBRARY_PATH}"
 
 RUN groupadd --system worker && useradd --system --gid worker --no-create-home worker \
-    && chown -R worker:worker /opt/pmemd24
+    && chown -R worker:worker /opt/pmemd24 /opt/ambertools25
 USER worker
