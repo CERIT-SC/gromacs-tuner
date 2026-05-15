@@ -1,7 +1,7 @@
-# Builds the private AMBER image from the licensed pmemd24 and AmberTools25 source tarballs.
-# Place pmemd24*.tar.bz2 and ambertools25*.tar.bz2 in the worker/ build context before building.
-# Download from https://ambermd.org/GetAmber.php (requires a valid AMBER 24 license).
-# WARNING: compilation takes 20-60 minutes.
+# Builds the private AMBER image from the licensed pmemd26 and AmberTools26 source tarballs.
+# Place pmemd26*.tar.bz2 and ambertools26*.tar.bz2 in the worker/ build context before building.
+# Download from https://ambermd.org/GetAmber.php (requires a valid AMBER 26 license).
+# WARNING: compilation takes 40-90 minutes.
 
 # Stage 1: Compile pmemd with CUDA and MPI support.
 # Needs the full CUDA toolkit (nvcc) to compile GPU kernels.
@@ -17,19 +17,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openmpi-bin libopenmpi-dev openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
-ARG PMEMD_TARBALL=pmemd24.tar.bz2
+ARG PMEMD_TARBALL=pmemd26.tar.bz2
 COPY ${PMEMD_TARBALL} /tmp/
 RUN tar -xjf /tmp/${PMEMD_TARBALL} -C /tmp \
     && rm /tmp/${PMEMD_TARBALL} \
     # Only SM7.5 (T4, RTX 2080/Ti), SM8.0 (A100), SM8.6 (A40) — the cluster's GPUs. Default is 7 archs.
-    && grep -q '${SM70FLAGS} ${SM75FLAGS} ${SM80FLAGS} ${SM86FLAGS} ${SM90FLAGS} ${SM100FLAGS} ${SM120FLAGS}' \
-           /tmp/pmemd24_src/cmake/CudaConfig.cmake \
-       || { echo "ERROR: expected GPU arch list not found in CudaConfig.cmake; pmemd24 source layout may have changed" >&2; exit 1; } \
-    && sed -i 's/${SM70FLAGS} ${SM75FLAGS} ${SM80FLAGS} ${SM86FLAGS} ${SM90FLAGS} ${SM100FLAGS} ${SM120FLAGS}/${SM75FLAGS} ${SM80FLAGS} ${SM86FLAGS}/' \
-       /tmp/pmemd24_src/cmake/CudaConfig.cmake
+    && grep -q '${SM70FLAGS} ${SM75FLAGS} ${SM80FLAGS} ${SM86FLAGS} ${SM89FLAGS} ${SM90FLAGS} ${SM100FLAGS} ${SM120FLAGS}' \
+            /tmp/pmemd26_src/cmake/CudaConfig.cmake \
+        || { echo "ERROR: expected GPU arch list not found in CudaConfig.cmake; pmemd26 source layout may have changed" >&2; exit 1; } \
+     && sed -i 's/${SM70FLAGS} ${SM75FLAGS} ${SM80FLAGS} ${SM86FLAGS} ${SM89FLAGS} ${SM90FLAGS} ${SM100FLAGS} ${SM120FLAGS}/${SM75FLAGS} ${SM80FLAGS} ${SM86FLAGS}/' \
+        /tmp/pmemd26_src/cmake/CudaConfig.cmake
 
-RUN cmake -S /tmp/pmemd24_src -B /tmp/pmemd24_build \
-        -DCMAKE_INSTALL_PREFIX=/opt/pmemd24 \
+RUN cmake -S /tmp/pmemd26_src -B /tmp/pmemd26_build \
+        -DCMAKE_INSTALL_PREFIX=/opt/pmemd26 \
         -DCOMPILER=GNU \
         -DCUDA=TRUE \
         -DMPI=TRUE \
@@ -41,21 +41,21 @@ RUN cmake -S /tmp/pmemd24_src -B /tmp/pmemd24_build \
         -DBUILD_PYTHON=FALSE \
         -DCHECK_UPDATES=FALSE \
     # ~4 GB RAM per parallel job; raise only if you have headroom
-    && cmake --build /tmp/pmemd24_build --parallel 4 \
-    && cmake --install /tmp/pmemd24_build
+    && cmake --build /tmp/pmemd26_build --parallel 4 \
+    && cmake --install /tmp/pmemd26_build
 
-ARG AMBERTOOLS_TARBALL=ambertools25.tar.bz2
+ARG AMBERTOOLS_TARBALL=ambertools26.tar.bz2
 COPY ${AMBERTOOLS_TARBALL} /tmp/
 RUN tar -xjf /tmp/${AMBERTOOLS_TARBALL} -C /tmp \
     && rm /tmp/${AMBERTOOLS_TARBALL} \
-    && grep -q '${SM70FLAGS} ${SM75FLAGS} ${SM80FLAGS} ${SM86FLAGS} ${SM90FLAGS} ${SM100FLAGS} ${SM120FLAGS}' \
-           /tmp/ambertools25_src/cmake/CudaConfig.cmake \
-       || { echo "ERROR: expected GPU arch list not found in CudaConfig.cmake; ambertools25 source layout may have changed" >&2; exit 1; } \
-    && sed -i 's/${SM70FLAGS} ${SM75FLAGS} ${SM80FLAGS} ${SM86FLAGS} ${SM90FLAGS} ${SM100FLAGS} ${SM120FLAGS}/${SM75FLAGS} ${SM80FLAGS} ${SM86FLAGS}/' \
-       /tmp/ambertools25_src/cmake/CudaConfig.cmake
+    && grep -q '${SM70FLAGS} ${SM75FLAGS} ${SM80FLAGS} ${SM86FLAGS} ${SM89FLAGS} ${SM90FLAGS} ${SM100FLAGS} ${SM120FLAGS}' \
+            /tmp/ambertools26_src/cmake/CudaConfig.cmake \
+        || { echo "ERROR: expected GPU arch list not found in CudaConfig.cmake; ambertools26 source layout may have changed" >&2; exit 1; } \
+     && sed -i 's/${SM70FLAGS} ${SM75FLAGS} ${SM80FLAGS} ${SM86FLAGS} ${SM89FLAGS} ${SM90FLAGS} ${SM100FLAGS} ${SM120FLAGS}/${SM75FLAGS} ${SM80FLAGS} ${SM86FLAGS}/' \
+        /tmp/ambertools26_src/cmake/CudaConfig.cmake
 
-RUN cmake -S /tmp/ambertools25_src -B /tmp/ambertools25_build \
-        -DCMAKE_INSTALL_PREFIX=/opt/ambertools25 \
+RUN cmake -S /tmp/ambertools26_src -B /tmp/ambertools26_build \
+        -DCMAKE_INSTALL_PREFIX=/opt/ambertools26 \
         -DCOMPILER=GNU \
         -DCUDA=TRUE \
         -DMPI=TRUE \
@@ -65,8 +65,8 @@ RUN cmake -S /tmp/ambertools25_src -B /tmp/ambertools25_build \
         -DDOWNLOAD_MINICONDA=FALSE \
         -DBUILD_PYTHON=FALSE \
         -DCHECK_UPDATES=FALSE \
-    && cmake --build /tmp/ambertools25_build --parallel 4 \
-    && cmake --install /tmp/ambertools25_build
+    && cmake --build /tmp/ambertools26_build --parallel 4 \
+    && cmake --install /tmp/ambertools26_build
 
 # Stage 2: Minimal runtime image.
 FROM nvidia/cuda:12.8.1-runtime-ubuntu22.04
@@ -77,12 +77,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgfortran5 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /opt/pmemd24 /opt/pmemd24
-COPY --from=builder /opt/ambertools25 /opt/ambertools25
-ENV AMBERHOME=/opt/ambertools25
-ENV PATH="${AMBERHOME}/bin:/opt/pmemd24/bin:${PATH}"
-ENV LD_LIBRARY_PATH="${AMBERHOME}/lib:/opt/pmemd24/lib:${LD_LIBRARY_PATH}"
+COPY --from=builder /opt/pmemd26 /opt/pmemd26
+COPY --from=builder /opt/ambertools26 /opt/ambertools26
+ENV AMBERHOME=/opt/ambertools26
+ENV PATH="${AMBERHOME}/bin:/opt/pmemd26/bin:${PATH}"
+ENV LD_LIBRARY_PATH="${AMBERHOME}/lib:/opt/pmemd26/lib:${LD_LIBRARY_PATH}"
 
 RUN groupadd --system worker && useradd --system --gid worker --no-create-home worker \
-    && chown -R worker:worker /opt/pmemd24 /opt/ambertools25
+    && chown -R worker:worker /opt/pmemd26 /opt/ambertools26
 USER worker
