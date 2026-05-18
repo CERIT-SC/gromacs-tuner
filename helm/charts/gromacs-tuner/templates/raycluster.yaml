@@ -40,6 +40,7 @@ spec:
         containers:
         - name: ray-head
           image: {{ .Values.ray.image }}
+          imagePullPolicy: {{ .Values.ray.imagePullPolicy }}
 
           ports:
             - { containerPort: 6379, name: gcs }
@@ -97,6 +98,7 @@ spec:
         containers:
         - name: ray-worker
           image: {{ .Values.ray.image }}
+          imagePullPolicy: {{ .Values.ray.imagePullPolicy }}
 
           lifecycle:
             preStop:
