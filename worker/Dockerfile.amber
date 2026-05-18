@@ -62,11 +62,23 @@ RUN cmake -S /tmp/ambertools26_src -B /tmp/ambertools26_build \
         -DBUILD_PERL=FALSE \
         -DBUILD_GUI=FALSE \
         -DINSTALL_TESTS=FALSE \
-        -DDOWNLOAD_MINICONDA=FALSE \
-        -DBUILD_PYTHON=FALSE \
+        -DDOWNLOAD_MINICONDA=TRUE \
+        -DBUILD_PYTHON=TRUE \
         -DCHECK_UPDATES=FALSE \
     && cmake --build /tmp/ambertools26_build --parallel 4 \
     && cmake --install /tmp/ambertools26_build
+
+# Install reduce manually because AmberTools doesn't include it.
+ARG REDUCE_VERSION=4.15
+RUN /opt/ambertools26/miniconda/bin/conda install \
+        -p /opt/ambertools26/miniconda \
+        -c conda-forge \
+        -c bioconda \
+        -y "reduce=${REDUCE_VERSION}" \
+    && ln -sf /opt/ambertools26/miniconda/bin/reduce /opt/ambertools26/bin/reduce \
+    && printf '%s\n' /opt/ambertools26/lib/python3.12/site-packages \
+        > /opt/ambertools26/miniconda/lib/python3.12/site-packages/ambertools-install.pth \
+    && /opt/ambertools26/miniconda/bin/conda clean -afy
 
 # Stage 2: Minimal runtime image.
 FROM nvidia/cuda:12.8.1-runtime-ubuntu22.04
@@ -77,12 +89,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgfortran5 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /opt/pmemd26 /opt/pmemd26
-COPY --from=builder /opt/ambertools26 /opt/ambertools26
+COPY --from=builder --chown=1000:1000 /opt/pmemd26 /opt/pmemd26
+COPY --from=builder --chown=1000:1000 /opt/ambertools26 /opt/ambertools26
 ENV AMBERHOME=/opt/ambertools26
-ENV PATH="${AMBERHOME}/bin:/opt/pmemd26/bin:${PATH}"
-ENV LD_LIBRARY_PATH="${AMBERHOME}/lib:/opt/pmemd26/lib:${LD_LIBRARY_PATH}"
+ENV PATH="${AMBERHOME}/miniconda/bin:${AMBERHOME}/bin:/opt/pmemd26/bin:${PATH}"
+ENV LD_LIBRARY_PATH="${AMBERHOME}/miniconda/lib:${AMBERHOME}/lib:/opt/pmemd26/lib:${LD_LIBRARY_PATH}"
+ENV PYTHONPATH="${AMBERHOME}/miniconda/lib/python3.12/site-packages:${AMBERHOME}/lib/python3.12/site-packages"
 
-RUN groupadd --system worker && useradd --system --gid worker --no-create-home worker \
-    && chown -R worker:worker /opt/pmemd26 /opt/ambertools26
-USER worker
+USER 1000
