@@ -59,26 +59,16 @@ cd helm/
 make uninstall
 ```
 
-## Basic Workflow
+## End-to-End API Tests
 
-1.  **Submit a TPR File:**
+The E2E tests are separate from the unit tests and require a running API deployment. They submit the demo GROMACS and AMBER inputs, poll each job until it finishes, and delete the job afterwards. To run against a Kubernetes deployment, use the Makefile target. It reads the `tuner-auth` secret from the namespace, port-forwards `gromacs-tuner-api-svc`, and injects the credentials into pytest:
 
-    Execute the `run_submit.sh` script to submit your GROMACS `.tpr` file (e.g., `md.tpr`) for tuning:
+```bash
+make e2e
+```
 
-    ```bash
-    ./run_submit.sh /path/to/md.tpr
-    ```
+The namespace defaults to `md-dashboard-ns` and can be overridden:
 
-    This script submits the specified `.tpr` file to the API. The API will return a JSON response containing a `tuner_run_id`.
-
-    The API is protected using HTTP Basic Auth. You must provide the `admin` username and the password configured in the Kubernetes Secret when accessing any endpoint.
-
-2.  **Poll Job Status:**
-
-    Use the `poll_status.sh` script to monitor the tuning process:
-
-    ```bash
-    ./poll_status.sh <tuner_run_id>
-    ```
-
-    Replace `<tuner_run_id>` with the UUID obtained from the submission response. This script will provide updates on the tuning job's status.
+```bash
+make e2e NAMESPACE=some-ns
+```

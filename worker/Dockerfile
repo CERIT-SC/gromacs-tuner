@@ -1,13 +1,13 @@
 # Source Dockerfile: https://github.com/ljocha/gromacs-plumed-docker/blob/master/Dockerfile
 
 # Stage 1: Pull AMBER binaries from private licensed image (run `make push-amber` first).
-FROM cerit.io/xkrasa/amber:24 AS amber
+FROM cerit.io/xkrasa/amber:26 AS amber
 
 # Stage 2: Combined GMX + AMBER worker
 FROM cerit.io/ljocha/gromacs:2026-1-plumed-2-10-afed-pytorch-model-cv-2_ray-2-54-0_1
 
-COPY --from=amber /opt/pmemd24 /opt/pmemd24
-ENV AMBERHOME=/opt/pmemd24
+COPY --from=amber /opt/pmemd26 /opt/pmemd26
+ENV AMBERHOME=/opt/pmemd26
 ENV PATH="${AMBERHOME}/bin:${PATH}"
 # AMBER bundles FFTW in lib/; ENV vars don't transfer with COPY --from.
 ENV LD_LIBRARY_PATH="${AMBERHOME}/lib:${LD_LIBRARY_PATH}"

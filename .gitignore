@@ -3,4 +3,5 @@ __pycache__/
 .vscode/
 .venv/
 .python-version
-pmemd24*.tar.bz2
+pmemd*.tar.bz2
+ambertools*.tar.bz2

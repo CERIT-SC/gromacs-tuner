@@ -3,11 +3,11 @@ SHELL := /bin/bash
 
 REGISTRY         ?= cerit.io/xkrasa
 AMBER_IMAGE_NAME ?= amber
-AMBER_VERSION    ?= 24
+AMBER_VERSION    ?= 26
 AMBER_IMAGE      := $(REGISTRY)/$(AMBER_IMAGE_NAME):$(AMBER_VERSION)
 
 IMAGE_NAME ?= gromacs-tuner-worker
-TAG        ?= gmx-2026.1_amber-24_ray-2.54.0_py-3.13
+TAG        ?= gmx-2026.1_amber-26_ray-2.54.0_py-3.13
 IMAGE      := $(REGISTRY)/$(IMAGE_NAME):$(TAG)
 
 .PHONY: help build-amber push-amber build push clean tag
@@ -16,7 +16,7 @@ help: ## Show help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
-PMEMD_TARBALL ?= pmemd24.tar.bz2
+PMEMD_TARBALL ?= pmemd26.tar.bz2
 
 build-amber: ## Build AMBER base image (place pmemd tarball in worker/, set PMEMD_TARBALL=filename)
 	docker build -t $(AMBER_IMAGE) -f Dockerfile.amber \

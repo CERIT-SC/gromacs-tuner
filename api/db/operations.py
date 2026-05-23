@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, timezone
 
 from sqlalchemy import asc, select
+from sqlalchemy.orm.exc import StaleDataError
 
 from api.db.models import Job, Trial, get_session
 from api.schemas.common import JobStatus, MDEngine
@@ -64,7 +65,12 @@ def update_trial_result(trial_id: int, status: JobStatus, performance: float | N
     with get_session() as session:
         if trial := session.execute(select(Trial).where(Trial.id == trial_id)).scalar_one_or_none():
             trial.status, trial.performance = status, performance
-            session.commit()
+            try:
+                session.commit()
+            except StaleDataError:
+                session.rollback()
+                logger.info("Trial %d disappeared before result update committed", trial_id)
+                return False
             return True
         return False
 
