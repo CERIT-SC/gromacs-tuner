@@ -23,8 +23,14 @@ logger = logging.getLogger(__name__)
 # Forbidden shell metacharacters for extra_args validation
 _EXTRA_ARGS_FORBIDDEN_RE = re.compile(r"[;&|`$()<>]")
 
-GMX_FORBIDDEN_FLAGS: frozenset[str] = frozenset({"-deffnm", "-s", "-nsteps", "-ntomp", "-np", "-nb", "-pme"})
-AMBER_FORBIDDEN_FLAGS: frozenset[str] = frozenset({"-i", "-p", "-c", "-o", "-inf", "-r", "-x", "-O"})
+GMX_FORBIDDEN_FLAGS: frozenset[str] = frozenset(
+    {"-deffnm", "-s", "-nsteps", "-ntomp", "-np", "-nb", "-pme", "-npme", "-cpt", "-v", "-nov"}
+)
+AMBER_FORBIDDEN_FLAGS: frozenset[str] = frozenset(
+    {"-i", "-p", "-c", "-o", "-inf", "-r", "-x", "-O", "-np"}
+)
+_VALUELESS_FLAGS: frozenset[str] = frozenset({"-O", "-v", "-nov"})
+_NEGATIVE_NUMBER_RE = re.compile(r"^-\d+(?:\.\d+)?$")
 
 
 def save_upload(file: UploadFile, dest: Path) -> None:
@@ -158,13 +164,13 @@ def sanitize_extra_args(extra_args: str, forbidden_flags: frozenset[str]) -> str
 
     Args:
         extra_args: Raw extra arguments string from user input.
-        forbidden_flags: Engine-specific flags that must not be overridden.
+        forbidden_flags: Engine-specific flags owned by the tuner.
 
     Returns:
         Canonicalized extra arguments string.
 
     Raises:
-        ValueError: If extra_args contains forbidden characters or flags.
+        ValueError: If extra_args contains forbidden characters or invalid quoting.
     """
     extra_args = (extra_args or "").strip()
     if not extra_args:
@@ -178,9 +184,29 @@ def sanitize_extra_args(extra_args: str, forbidden_flags: frozenset[str]) -> str
     except ValueError as e:
         raise ValueError(f"Invalid extra_args: {e}") from e
 
-    # Check both plain tokens and the flag part of "flag=value" syntax
-    flag_names = {token.split("=")[0] for token in tokens}
-    if flag_names & forbidden_flags:
-        raise ValueError(f"extra_args must not override critical flags: {', '.join(sorted(forbidden_flags))}")
+    tokens = _remove_tuner_owned_flags(tokens, forbidden_flags)
 
     return shlex.join(tokens)
+
+
+def _remove_tuner_owned_flags(tokens: list[str], tuner_owned_flags: frozenset[str]) -> list[str]:
+    filtered: list[str] = []
+    skip_next = False
+    for index, token in enumerate(tokens):
+        if skip_next:
+            skip_next = False
+            continue
+
+        flag = token.split("=", 1)[0]
+        if flag not in tuner_owned_flags:
+            filtered.append(token)
+            continue
+
+        if "=" in token or flag in _VALUELESS_FLAGS:
+            continue
+        if index + 1 < len(tokens) and (
+            not tokens[index + 1].startswith("-") or _NEGATIVE_NUMBER_RE.match(tokens[index + 1])
+        ):
+            skip_next = True
+
+    return filtered
