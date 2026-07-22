@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-REGISTRY         ?= cerit.io/xkrasa
+REGISTRY         ?= cerit.io/mddash
 AMBER_IMAGE_NAME ?= amber
 AMBER_VERSION    ?= 26
 AMBER_IMAGE      := $(REGISTRY)/$(AMBER_IMAGE_NAME):$(AMBER_VERSION)

@@ -1,6 +1,6 @@
 CHART_NAME := gromacs-tuner
 NAMESPACE ?= gromacs-tuner-ns
-REGISTRY ?= cerit.io/xkrasa
+REGISTRY ?= cerit.io/mddash
 
 install:
 	helm repo add kuberay https://ray-project.github.io/kuberay-helm/ || true

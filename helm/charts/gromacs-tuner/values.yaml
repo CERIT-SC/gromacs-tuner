@@ -1,5 +1,5 @@
 image:
-  repository: cerit.io/xkrasa/gromacs-tuner-api
+  repository: cerit.io/mddash/gromacs-tuner-api
   tag: "latest"
   pullPolicy: Always
 
@@ -26,7 +26,7 @@ storage:
 ray:
   version: "2.54.0"
   # Combined GMX+AMBER worker image. Build from worker/Dockerfile.
-  image: "cerit.io/xkrasa/gromacs-tuner-worker:gmx-2026.1_amber-26_ray-2.54.0_py-3.13"
+  image: "cerit.io/mddash/gromacs-tuner-worker:gmx-2026.1_amber-26_ray-2.54.0_py-3.13"
   imagePullPolicy: IfNotPresent
   autoscaler:
     idleTimeoutSeconds: 300
