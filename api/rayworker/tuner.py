@@ -25,6 +25,7 @@ from api.schemas.common import JobStatus, MDEngine
 
 RAY_RUNTIME_ENV = {"working_dir": RUNTIME_WORKDIR}
 logger = logging.getLogger(__name__)
+_ray_init_lock = threading.Lock()
 
 logger.info("Tuner module initialized")
 
@@ -107,7 +108,10 @@ TrialConfigEntry = tuple[int, TrialConfig]
 
 
 def _ensure_ray_initialized() -> None:
-    if not ray.is_initialized():
+    with _ray_init_lock:
+        if ray.is_initialized():
+            return
+        ray.shutdown()
         ray.init(address=RAY_ADDRESS, runtime_env=RAY_RUNTIME_ENV, ignore_reinit_error=True)
         logger.info("Connected to Ray cluster at %s", RAY_ADDRESS)
 
