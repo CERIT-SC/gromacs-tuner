@@ -1,5 +1,8 @@
 # GMX K8S Tuner
 
+> [!WARNING]
+> This repository is deprecated and no longer maintained. The tuner has moved to [CERIT-SC/mddash](https://github.com/CERIT-SC/mddash) under the [`tuner/`](https://github.com/CERIT-SC/mddash/tree/master/tuner) directory. Please use the new location for all further development and issues.
+
 This project deploys a tuning API for GROMACS using Ray Tune on Kubernetes.
 
 ## Prerequisites
