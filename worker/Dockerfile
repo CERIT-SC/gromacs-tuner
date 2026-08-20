@@ -1,7 +1,7 @@
 # Source Dockerfile: https://github.com/ljocha/gromacs-plumed-docker/blob/master/Dockerfile
 
 # Stage 1: Pull AMBER binaries from private licensed image (run `make push-amber` first).
-FROM cerit.io/xkrasa/amber:26 AS amber
+FROM cerit.io/mddash/amber:26 AS amber
 
 # Stage 2: Combined GMX + AMBER worker
 FROM cerit.io/ljocha/gromacs:2026-1-plumed-2-10-afed-pytorch-model-cv-2_ray-2-54-0_1

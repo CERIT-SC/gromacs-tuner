@@ -2,7 +2,7 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 IMAGE_NAME ?= gromacs-tuner-api
-REGISTRY ?= cerit.io/xkrasa
+REGISTRY ?= cerit.io/mddash
 TAG ?= latest
 IMAGE := $(REGISTRY)/$(IMAGE_NAME):$(TAG)
 MAKEFILE_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
